@@ -13,6 +13,7 @@ const presetBtns = Array.from(document.querySelectorAll(".presetBtn"));
 let topology = null;
 let glslCode = "float sdf(vec3 p){return length(p)-0.7;}";
 let activePreset = "tube";
+let lastSynthesisReport = null;
 
 const PRESETS = {
   tube: {
@@ -45,8 +46,10 @@ b3 = require_middle_bore(24.5)
 b4 = require_lower_to_middle(30)
 b5 = require_middle_to_upper(40)
 b6 = require_wall_min(1.5)
+o1 = objective_maximize_internal_volume(1.0)
+o2 = objective_minimize_height(0.35)
 
-result = synthesize_bowlwell(b1, b2, b3, b4, b5, b6)
+result = synthesize_bowlwell(b1, b2, b3, b4, b5, b6, o1, o2)
 `,
   },
   deepwell: {
@@ -286,6 +289,9 @@ function synthesizeBowlwellFromConstraints(constraints) {
     lower_to_middle: 30.0,
     middle_to_upper: 40.0,
     wall_min: 1.5,
+    objective_volume: 1.0,
+    objective_height: 0.3,
+    require_continuous_wall: true,
   };
 
   constraints.forEach((c) => {
@@ -296,6 +302,9 @@ function synthesizeBowlwellFromConstraints(constraints) {
     if (c.kind === "lower_to_middle") cfg.lower_to_middle = c.data.distance;
     if (c.kind === "middle_to_upper") cfg.middle_to_upper = c.data.distance;
     if (c.kind === "wall_min") cfg.wall_min = c.data.thickness;
+    if (c.kind === "objective_maximize_internal_volume") cfg.objective_volume = c.data.weight;
+    if (c.kind === "objective_minimize_height") cfg.objective_height = c.data.weight;
+    if (c.kind === "require_continuous_wall") cfg.require_continuous_wall = c.data.enabled;
   });
 
   const wall = Math.max(0.4, cfg.wall_min);
@@ -306,10 +315,16 @@ function synthesizeBowlwellFromConstraints(constraints) {
   const upperInnerR = Math.max(middleInnerR + wall, cfg.upper_bore_d * 0.5);
   const upperOuterR = upperInnerR + wall;
 
+  const volW = Math.max(0, cfg.objective_volume);
+  const hW = Math.max(0, cfg.objective_height);
+  const balance = volW / (volW + hW + 1e-9);
+
   const zLowerMid = Math.max(4.0, cfg.lower_to_middle);
   const zMidUpper = Math.max(4.0, cfg.middle_to_upper);
   const zUpperBase = zLowerMid + zMidUpper;
-  const upperDepth = Math.max(18.0, 0.55 * cfg.upper_bore_d);
+  const upperDepthMin = Math.max(10.0, 0.35 * cfg.upper_bore_d);
+  const upperDepthMax = Math.max(upperDepthMin + 2.0, 0.95 * cfg.upper_bore_d);
+  const upperDepth = upperDepthMin + (upperDepthMax - upperDepthMin) * balance;
 
   const lowerOuter = cylinderShape(lowerOuterR, zLowerMid * 0.5);
   const lowerOuterAt = shapeAt(lowerOuter, 0, 0, zLowerMid * 0.5);
@@ -330,6 +345,29 @@ function synthesizeBowlwellFromConstraints(constraints) {
   const upperInnerCap = sphereShape(upperInnerR);
   const upperInnerCapAt = shapeAt(upperInnerCap, 0, 0, zUpperBase + upperDepth);
   const cavity = shapeUnionMany([lowerInnerAt, middleInnerAt, upperInnerAt, upperInnerCapAt]);
+
+  lastSynthesisReport = {
+    kind: "bowlwell",
+    solved: {
+      upper_bore_d: cfg.upper_bore_d,
+      lower_bore_outer_max_d: cfg.lower_bore_outer_max_d,
+      middle_bore_d: cfg.middle_bore_d,
+      lower_to_middle: cfg.lower_to_middle,
+      middle_to_upper: cfg.middle_to_upper,
+      wall_min: cfg.wall_min,
+      objective_volume: cfg.objective_volume,
+      objective_height: cfg.objective_height,
+      lower_outer_d: lowerOuterR * 2.0,
+      lower_inner_d: lowerInnerR * 2.0,
+      middle_outer_d: middleOuterR * 2.0,
+      middle_inner_d: middleInnerR * 2.0,
+      upper_outer_d: upperOuterR * 2.0,
+      upper_inner_d: upperInnerR * 2.0,
+      upper_depth: upperDepth,
+      total_height_approx: zUpperBase + upperDepth + upperOuterR,
+      continuous_wall: cfg.require_continuous_wall,
+    },
+  };
 
   return shapeSub(outer, cavity);
 }
@@ -550,6 +588,24 @@ function builtins(name, args) {
     if (args.length !== 1) throw new Error("require_wall_min(thickness) expects 1 arg");
     ensureNum(args[0], "require_wall_min");
     return makeConstraint("wall_min", { thickness: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "objective_maximize_internal_volume") {
+    if (args.length !== 1) throw new Error("objective_maximize_internal_volume(weight) expects 1 arg");
+    ensureNum(args[0], "objective_maximize_internal_volume");
+    return makeConstraint("objective_maximize_internal_volume", { weight: Math.max(0.0, args[0]) });
+  }
+
+  if (name === "objective_minimize_height") {
+    if (args.length !== 1) throw new Error("objective_minimize_height(weight) expects 1 arg");
+    ensureNum(args[0], "objective_minimize_height");
+    return makeConstraint("objective_minimize_height", { weight: Math.max(0.0, args[0]) });
+  }
+
+  if (name === "require_continuous_wall") {
+    if (args.length !== 1) throw new Error("require_continuous_wall(enabled) expects 1 arg");
+    ensureNum(args[0], "require_continuous_wall");
+    return makeConstraint("require_continuous_wall", { enabled: args[0] !== 0 });
   }
 
   if (name === "synthesize") {
@@ -919,9 +975,13 @@ function refreshTopologyMeta() {
 
 function compileAndSend() {
   try {
+    lastSynthesisReport = null;
     topology = compileScriptToTopology(editor.value);
     refreshTopologyMeta();
     log(`compiled topology nodes=${topology.nodes.length}`);
+    if (lastSynthesisReport && lastSynthesisReport.solved) {
+      log(`synthesis: ${JSON.stringify(lastSynthesisReport.solved)}`);
+    }
     send({ cmd: "glsl_topology", topology });
   } catch (e) {
     log(`compile error: ${e.message}`);
