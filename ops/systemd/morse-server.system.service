@@ -1,0 +1,17 @@
+[Unit]
+Description=Topology-First CAD morse-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orbiter1
+Group=orbiter1
+WorkingDirectory=/home/orbiter1/projects/topology-first-cad
+Environment=PORT=8790
+ExecStart=/home/orbiter1/projects/topology-first-cad/target/release/morse-server
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

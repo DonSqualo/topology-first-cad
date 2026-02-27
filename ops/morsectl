@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UNIT_NAME="morse-server.service"
+USER_UNIT_DIR="${HOME}/.config/systemd/user"
+SYSTEM_UNIT_PATH="/etc/systemd/system/${UNIT_NAME}"
+USER_TEMPLATE="${ROOT_DIR}/ops/systemd/morse-server.user.service"
+SYSTEM_TEMPLATE="${ROOT_DIR}/ops/systemd/morse-server.system.service"
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+print_help() {
+  cat <<USAGE
+morsectl - simple service CLI
+
+Usage:
+  morsectl user-install
+  morsectl user-start|user-stop|user-restart|user-status|user-logs
+  morsectl install-system
+  morsectl system-start|system-stop|system-restart|system-status|system-logs
+  morsectl install-nginx
+  morsectl tailscale-status
+  morsectl tailscale-open
+  morsectl tailscale-serve
+USAGE
+}
+
+build_release() {
+  (cd "${ROOT_DIR}" && cargo build --release -p morse-server)
+}
+
+user_install() {
+  mkdir -p "${USER_UNIT_DIR}"
+  cp "${USER_TEMPLATE}" "${USER_UNIT_DIR}/${UNIT_NAME}"
+  systemctl --user daemon-reload
+  systemctl --user enable "${UNIT_NAME}" >/dev/null
+  echo "installed user unit: ${USER_UNIT_DIR}/${UNIT_NAME}"
+}
+
+install_system() {
+  echo "installing system unit to ${SYSTEM_UNIT_PATH} (sudo required)"
+  sudo cp "${SYSTEM_TEMPLATE}" "${SYSTEM_UNIT_PATH}"
+  sudo systemctl daemon-reload
+  sudo systemctl enable "${UNIT_NAME}"
+}
+
+install_nginx() {
+  echo "installing nginx and reverse proxy (sudo required)"
+  if ! command -v nginx >/dev/null 2>&1; then
+    sudo pacman -Sy --noconfirm nginx
+  fi
+
+  sudo cp "${ROOT_DIR}/ops/nginx/topology-first-cad.conf" /etc/nginx/conf.d/topology-first-cad.conf
+
+  if ! grep -q "include /etc/nginx/conf.d/\*.conf;" /etc/nginx/nginx.conf; then
+    echo "nginx.conf does not include /etc/nginx/conf.d/*.conf" >&2
+    echo "add: include /etc/nginx/conf.d/*.conf; in the http block" >&2
+    exit 1
+  fi
+
+  sudo nginx -t
+  sudo systemctl enable --now nginx
+  sudo systemctl reload nginx
+  echo "nginx configured. Reverse proxy active on :80 -> 127.0.0.1:8790"
+}
+
+tailscale_status() {
+  require_cmd tailscale
+  local json
+  json="$(tailscale status --json)"
+  local client daemon dns ip
+  client="$(tailscale version | awk 'NR==1{print $1}')"
+  daemon="$(printf '%s' "$json" | sed -n 's/.*"Version": "\([^"]*\)".*/\1/p' | head -n 1)"
+  dns="$(printf '%s' "$json" | sed -n 's/.*"DNSName": "\([^"]*\)".*/\1/p' | head -n 1)"
+  ip="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+
+  echo "tailscale client: ${client:-unknown}"
+  echo "tailscaled:      ${daemon:-unknown}"
+  echo "dns name:        ${dns:-unknown}"
+  echo "tailnet ip:      ${ip:-unknown}"
+
+  if [[ -n "${client}" && -n "${daemon}" && "${client}" != "${daemon}" ]]; then
+    echo "version mismatch detected: restart tailscaled to pick up latest package"
+    echo "command: sudo systemctl restart tailscaled"
+  fi
+}
+
+tailscale_open() {
+  require_cmd tailscale
+  local dns
+  dns="$(tailscale status --json | sed -n 's/.*"DNSName": "\([^"]*\)".*/\1/p' | head -n 1 | sed 's/\.$//')"
+  if [[ -z "${dns}" ]]; then
+    echo "could not resolve tailscale DNS name" >&2
+    exit 1
+  fi
+  echo "open on tailnet: http://${dns}/"
+}
+
+tailscale_serve() {
+  require_cmd tailscale
+  tailscale serve --bg http://127.0.0.1:8790
+  echo "tailscale serve enabled for http://127.0.0.1:8790"
+  echo "check with: tailscale serve status"
+}
+
+case "${1:-}" in
+  user-install) user_install ;;
+  user-start) build_release; systemctl --user reset-failed "${UNIT_NAME}" || true; systemctl --user start "${UNIT_NAME}" ;;
+  user-stop) systemctl --user stop "${UNIT_NAME}" ;;
+  user-restart) build_release; systemctl --user reset-failed "${UNIT_NAME}" || true; systemctl --user restart "${UNIT_NAME}" ;;
+  user-status) systemctl --user status "${UNIT_NAME}" --no-pager ;;
+  user-logs) journalctl --user -u "${UNIT_NAME}" -n 200 --no-pager ;;
+  install-system) install_system ;;
+  system-start) build_release; sudo systemctl reset-failed "${UNIT_NAME}" || true; sudo systemctl start "${UNIT_NAME}" ;;
+  system-stop) sudo systemctl stop "${UNIT_NAME}" ;;
+  system-restart) build_release; sudo systemctl reset-failed "${UNIT_NAME}" || true; sudo systemctl restart "${UNIT_NAME}" ;;
+  system-status) sudo systemctl status "${UNIT_NAME}" --no-pager ;;
+  system-logs) sudo journalctl -u "${UNIT_NAME}" -n 200 --no-pager ;;
+  install-nginx) install_nginx ;;
+  tailscale-status) tailscale_status ;;
+  tailscale-open) tailscale_open ;;
+  tailscale-serve) tailscale_serve ;;
+  ""|-h|--help|help) print_help ;;
+  *)
+    echo "unknown command: $1" >&2
+    print_help
+    exit 1
+    ;;
+esac
