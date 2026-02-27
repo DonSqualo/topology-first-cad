@@ -1,0 +1,65 @@
+:root {
+  --bg: #0e1116;
+  --panel: #141a23;
+  --text: #ecf1f8;
+  --accent: #59d6ff;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 30% 10%, #182233, var(--bg));
+  color: var(--text);
+  font-family: "Iosevka Aile", "JetBrains Mono", monospace;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 100%;
+}
+
+.hud {
+  background: color-mix(in oklab, var(--panel), black 12%);
+  border-right: 1px solid #263244;
+  padding: 16px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+button {
+  margin-top: 8px;
+  border: 1px solid #2a98c6;
+  background: #173647;
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+#out {
+  margin-top: 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+#view {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-width: 900px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .hud {
+    border-right: 0;
+    border-bottom: 1px solid #263244;
+  }
+}

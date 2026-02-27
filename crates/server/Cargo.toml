@@ -1,0 +1,17 @@
+[package]
+name = "morse-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+morse-kernel = { path = "../kernel" }
+
+[lints]
+workspace = true
