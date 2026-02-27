@@ -7,6 +7,7 @@ const topoMeta = document.getElementById("topoMeta");
 const editor = document.getElementById("scriptEditor");
 const runBtn = document.getElementById("runScript");
 const criticalBtn = document.getElementById("critical");
+const fitViewBtn = document.getElementById("fitView");
 const exportBtn = document.getElementById("exportStl");
 const presetBtns = Array.from(document.querySelectorAll(".presetBtn"));
 
@@ -1102,6 +1103,11 @@ function applyCameraPreset(name) {
   cameraState.target.set(t[0], t[1], t[2]);
 }
 
+function fitView() {
+  applyCameraPreset(activePreset);
+  log("view reset");
+}
+
 async function loadScriptFromServer(scriptName) {
   const r = await fetch(`/script/${encodeURIComponent(scriptName)}`);
   if (!r.ok) {
@@ -1194,6 +1200,7 @@ criticalBtn.addEventListener("click", () => {
   const seed = (PRESETS[activePreset] || PRESETS.tube).criticalSeed;
   send({ cmd: "critical_topology", topology, x: seed[0], y: seed[1], z: seed[2] });
 });
+fitViewBtn.addEventListener("click", fitView);
 
 exportBtn.addEventListener("click", () => {
   if (!topology) return;
@@ -1343,9 +1350,12 @@ window.addEventListener("mousemove", (e) => {
 });
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
-  cameraState.dist = Math.max(0.5, Math.min(12.0, cameraState.dist + e.deltaY * 0.003));
+  cameraState.dist = Math.max(0.5, Math.min(5000.0, cameraState.dist + e.deltaY * 0.15));
 });
 window.addEventListener("resize", resize);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "f" || e.key === "F") fitView();
+});
 
 resize();
 render();
