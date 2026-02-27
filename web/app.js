@@ -71,11 +71,22 @@ result = union(body, top_lip)
     criticalSeed: [1.0, 0.0, 0.0],
     exportMesh: { min: -2.3, max: 2.3, res: 42 },
     camera: { dist: 4.0, pitch: 0.32, yaw: 0.58 },
-    script: `-- Inner ring with repeated magnet cutouts (Hallbach-inspired)
-base = subtract(cylinder(1.55, 1.0), cylinder(0.62, 1.02))
-slot = box(0.34, 0.34, 1.2)
-cuts = repeat_polar(slot, 8, 1.08)
-result = subtract(base, cuts)
+    script: `-- Constraint-first Halbach ring description
+coverslip_d = 20
+center_hole_d = 25
+magnet_size = 12.8
+inner_count = 8
+outer_count = 12
+min_gap = 0.35
+ring_h = 1.15
+
+core = halbach_from_constraints(coverslip_d, center_hole_d, magnet_size, inner_count, outer_count, min_gap, ring_h)
+
+-- Explicit negative-space constraints (must not contain material)
+v1 = void_cylinder(0, 0, 0, 0.24, 1.6)
+v2 = void_cylinder(0.0, 0.0, 0.8, 0.16, 0.22)
+
+result = apply_voids(core, v1, v2)
 `,
   },
 };
@@ -210,6 +221,74 @@ function shapeRotZ(shape, a) {
   return makeShape((coord, b) => shape.sdf(coordRotZ(coord, b, a), b));
 }
 
+function shapeUnionMany(shapes) {
+  if (!Array.isArray(shapes) || shapes.length === 0) throw new Error("union requires at least one shape");
+  shapes.forEach((s) => ensureShape(s, "union"));
+  return shapes.slice(1).reduce((acc, cur) => makeShape((coord, b) => b.min(acc.sdf(coord, b), cur.sdf(coord, b))), shapes[0]);
+}
+
+function shapeSub(a, b) {
+  ensureShape(a, "subtract");
+  ensureShape(b, "subtract");
+  return makeShape((coord, builder) => builder.max(a.sdf(coord, builder), builder.neg(b.sdf(coord, builder))));
+}
+
+function polarInstances(shape, count, radius, startA = 0.0, stepA = null) {
+  const c = Math.max(1, Math.floor(count));
+  const step = stepA == null ? (Math.PI * 2.0) / c : stepA;
+  const out = [];
+  for (let i = 0; i < c; i += 1) {
+    const a = startA + i * step;
+    const x = radius * Math.cos(a);
+    const y = radius * Math.sin(a);
+    out.push(shapeAt(shapeRotZ(shape, a), x, y, 0.0));
+  }
+  return out;
+}
+
+function halbachFromConstraints(coverslipD, centerHoleD, magnetSize, innerCount, outerCount, minGap, ringHalfH) {
+  const csR = Math.max(0.01, coverslipD * 0.5);
+  const holeR = Math.max(centerHoleD * 0.5, csR + minGap);
+  const magDiag = magnetSize * Math.SQRT2;
+  const innerOrbitR = holeR + magDiag * 0.5 + minGap;
+  const outerOrbitR = innerOrbitR + magDiag + minGap;
+  const ringInnerR = holeR + magDiag + minGap * 0.5;
+  const ringOuterR = outerOrbitR + magDiag * 0.55 + minGap;
+  const slotSize = magnetSize + minGap * 0.5;
+
+  const base = shapeSub(cylinderShape(ringOuterR, ringHalfH), cylinderShape(holeR, ringHalfH + 0.05));
+
+  const innerSlot = boxShape(slotSize, slotSize, ringHalfH * 2.4);
+  const outerSlot = boxShape(slotSize, slotSize, ringHalfH * 2.4);
+
+  const innerCuts = polarInstances(innerSlot, innerCount, innerOrbitR, 0.0);
+  const outerCuts = polarInstances(outerSlot, outerCount, outerOrbitR, Math.PI / outerCount);
+  const cuts = shapeUnionMany([...innerCuts, ...outerCuts]);
+
+  return shapeSub(base, cuts);
+}
+
+function cylinderShape(r, halfH) {
+  return makeShape((coord, b) => {
+    const rr = b.add(b.mul(coord.x, coord.x), b.mul(coord.y, coord.y));
+    const radial = b.sub(rr, b.num(r * r));
+    const zcap = b.sub(b.mul(coord.z, coord.z), b.num(halfH * halfH));
+    return b.max(radial, zcap);
+  });
+}
+
+function boxShape(sx, sy, sz) {
+  const hx = sx * 0.5;
+  const hy = sy * 0.5;
+  const hz = sz * 0.5;
+  return makeShape((coord, b) => {
+    const x = b.max(b.sub(coord.x, b.num(hx)), b.sub(b.num(-hx), coord.x));
+    const y = b.max(b.sub(coord.y, b.num(hy)), b.sub(b.num(-hy), coord.y));
+    const z = b.max(b.sub(coord.z, b.num(hz)), b.sub(b.num(-hz), coord.z));
+    return b.max(x, b.max(y, z));
+  });
+}
+
 function ensureShape(v, context) {
   if (!isShape(v)) throw new Error(`${context} expects a shape value`);
 }
@@ -286,6 +365,30 @@ function builtins(name, args) {
     });
   }
 
+  if (name === "halbach_from_constraints") {
+    if (args.length !== 7) {
+      throw new Error("halbach_from_constraints(coverslip_d, center_hole_d, magnet_size, inner_count, outer_count, min_gap, ring_half_h) expects 7 args");
+    }
+    args.forEach((a) => ensureNum(a, "halbach_from_constraints"));
+    return halbachFromConstraints(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+  }
+
+  if (name === "void_cylinder") {
+    if (args.length !== 5) throw new Error("void_cylinder(x, y, z, r, half_h) expects 5 args");
+    args.forEach((a) => ensureNum(a, "void_cylinder"));
+    return shapeAt(cylinderShape(args[3], args[4]), args[0], args[1], args[2]);
+  }
+
+  if (name === "apply_voids") {
+    if (args.length < 2) throw new Error("apply_voids(base, void1, ...) expects at least 2 args");
+    ensureShape(args[0], "apply_voids");
+    const base = args[0];
+    const voids = args.slice(1);
+    voids.forEach((v) => ensureShape(v, "apply_voids"));
+    const voidUnion = shapeUnionMany(voids);
+    return shapeSub(base, voidUnion);
+  }
+
   if (name === "tube") {
     if (args.length !== 3) throw new Error("tube(outer_r, inner_r, half_h) expects 3 args");
     ensureNum(args[0], "tube");
@@ -306,7 +409,7 @@ function builtins(name, args) {
   }
 
   if (name === "union") {
-    return foldShape((a, c) => makeShape((coord, b) => b.min(a.sdf(coord, b), c.sdf(coord, b))), args, "union");
+    return shapeUnionMany(args);
   }
 
   if (name === "intersect") {
@@ -315,9 +418,7 @@ function builtins(name, args) {
 
   if (name === "subtract") {
     if (args.length !== 2) throw new Error("subtract(a, b) expects 2 shape args");
-    ensureShape(args[0], "subtract");
-    ensureShape(args[1], "subtract");
-    return makeShape((coord, b) => b.max(args[0].sdf(coord, b), b.neg(args[1].sdf(coord, b))));
+    return shapeSub(args[0], args[1]);
   }
 
   if (name === "smooth_union") {
