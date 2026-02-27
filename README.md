@@ -29,12 +29,8 @@ Topology-first implicit CAD kernel from scratch.
   - chain methods: `:at(x,y,z)`, `:rotz(a)`
   - shape ops: `sphere`, `cylinder`, `box`, `torus`, `tube`, `union`, `intersect`, `subtract`
   - constraint-first ops:
-    - generic: `require("key", value)`, `objective("name", weight)`, `synthesize("model", c1, c2, ...)`
-    - feature/relationship style: `bore("name", d)`, `handle("name", d)`, `relate("kind", a, b, value)` and `synthesize("bore_stack", ...)`
-    - `require_coverslip`, `require_center_hole`, `require_magnet_rings`, `require_ring_height`
-    - `synthesize(c1, c2, ...)`
-    - bowlwell constraints: `require_upper_bore`, `require_lower_bore_outer_max`, `require_middle_bore`, `require_lower_to_middle`, `require_middle_to_upper`, `require_wall_min`, `synthesize_bowlwell(...)`
-    - bowlwell objectives: `objective_maximize_internal_volume(weight)`, `objective_minimize_height(weight)`
+    - generic: `require("key", value)`, `objective("name", weight)`, `synthesize("model", ...items)`
+    - feature/relationship style: `bore("name", d)`, `handle("name", d)`, `relate("kind", a, b, value)` with `synthesize("bore_stack", ...)`
     - `void_cylinder`, `apply_voids`, `repeat_polar`
 - Morse analysis foundations:
   - Finite-difference Hessian
@@ -61,6 +57,11 @@ cargo run -p morse-server
 Simple CLI: `ops/morsectl`
 Service default port for systemd/nginx is `8790` (to avoid common local conflicts on `8787`).
 systemd units set `HOST=0.0.0.0` so the app is reachable on your Tailscale `100.x` IP.
+
+## Script Files + URL
+- Scripts are stored in `web/scripts/*.lua`.
+- Load by URL param: `/?script=bowl_well` or `/?script=ring`.
+- Default startup script is `bowl_well`.
 
 User service (no sudo):
 ```bash

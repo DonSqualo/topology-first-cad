@@ -1,8 +1,10 @@
 use std::net::SocketAddr;
 
 use axum::{
+    extract::Path,
     extract::ws::{Message, WebSocket},
     extract::WebSocketUpgrade,
+    http::StatusCode,
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -78,6 +80,7 @@ async fn main() {
         .route("/", get(index))
         .route("/app.js", get(app_js))
         .route("/style.css", get(style_css))
+        .route("/script/{name}", get(script_file))
         .route("/ws", get(ws_handler));
 
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -114,6 +117,24 @@ async fn style_css() -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
         include_str!("../../../web/style.css"),
     )
+}
+
+async fn script_file(Path(name): Path<String>) -> impl IntoResponse {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return (StatusCode::BAD_REQUEST, "invalid script name").into_response();
+    }
+    let path = format!("web/scripts/{name}.lua");
+    match std::fs::read_to_string(path) {
+        Ok(src) => (
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            src,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "script not found").into_response(),
+    }
 }
 
 async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {

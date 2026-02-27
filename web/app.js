@@ -12,14 +12,15 @@ const presetBtns = Array.from(document.querySelectorAll(".presetBtn"));
 
 let topology = null;
 let glslCode = "float sdf(vec3 p){return length(p)-0.7;}";
-let activePreset = "tube";
+let activePreset = "bowlwell";
 let lastSynthesisReport = null;
 
 const PRESETS = {
   tube: {
     criticalSeed: [0.7, 0.0, 0.0],
     exportMesh: { min: -1.7, max: 1.7, res: 38 },
-    camera: { dist: 3.2, pitch: 0.25, yaw: 0.6 },
+    camera: { dist: 3.2, pitch: 0.25, yaw: 0.6, target: [0, 0, 0] },
+    scriptFile: "tube",
     script: `-- line assignments + function calls + :at/:rotz chaining
 outer_r = 1.1
 inner_r = 0.65
@@ -31,7 +32,8 @@ result = tube(outer_r, inner_r, half_h)
   bowlwell: {
     criticalSeed: [0.0, 0.0, 35.0],
     exportMesh: { min: -40, max: 90, res: 52 },
-    camera: { dist: 150, pitch: 0.34, yaw: 0.52 },
+    camera: { dist: 150, pitch: 0.34, yaw: 0.52, target: [0, 0, 45] },
+    scriptFile: "bowl_well",
     script: `-- Feature + relationship DSL
 lower = bore("lower", 24.5)
 middle = bore("middle", 24.5)
@@ -54,7 +56,8 @@ result = synthesize("bore_stack",
   deepwell: {
     criticalSeed: [0.0, 0.0, 0.8],
     exportMesh: { min: -2.4, max: 2.4, res: 42 },
-    camera: { dist: 4.3, pitch: 0.36, yaw: 0.48 },
+    camera: { dist: 4.3, pitch: 0.36, yaw: 0.48, target: [0, 0, 0.6] },
+    scriptFile: "deep_well",
     script: `-- Hallbach DeepWell style
 outer = cylinder(0.95, 1.75):at(0,0,0.0)
 bore_main = cylinder(0.52, 1.72):at(0,0,0.02)
@@ -68,7 +71,8 @@ result = union(body, top_lip)
   "ring-cutouts": {
     criticalSeed: [1.0, 0.0, 0.0],
     exportMesh: { min: -2.3, max: 2.3, res: 42 },
-    camera: { dist: 4.0, pitch: 0.32, yaw: 0.58 },
+    camera: { dist: 4.0, pitch: 0.32, yaw: 0.58, target: [0, 0, 0] },
+    scriptFile: "ring",
     script: `-- Generic constraint DSL (same language as bowlwell)
 base = synthesize("ring",
   require("coverslip", 20),
@@ -654,14 +658,6 @@ function builtins(name, args) {
     });
   }
 
-  if (name === "halbach_from_constraints") {
-    if (args.length !== 7) {
-      throw new Error("halbach_from_constraints(coverslip_d, center_hole_d, magnet_size, inner_count, outer_count, min_gap, ring_half_h) expects 7 args");
-    }
-    args.forEach((a) => ensureNum(a, "halbach_from_constraints"));
-    return halbachFromConstraints(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
-  }
-
   if (name === "require") {
     if (args.length !== 2) throw new Error("require(key, value) expects 2 args");
     ensureText(args[0], "require");
@@ -713,89 +709,6 @@ function builtins(name, args) {
     });
   }
 
-  if (name === "require_coverslip") {
-    if (args.length !== 1) throw new Error("require_coverslip(diameter) expects 1 arg");
-    ensureNum(args[0], "require_coverslip");
-    return makeConstraint("coverslip", { diameter: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_center_hole") {
-    if (args.length !== 1) throw new Error("require_center_hole(diameter) expects 1 arg");
-    ensureNum(args[0], "require_center_hole");
-    return makeConstraint("center_hole", { diameter: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_magnet_rings") {
-    if (args.length !== 4) throw new Error("require_magnet_rings(inner_count, outer_count, magnet_size, min_gap) expects 4 args");
-    args.forEach((a) => ensureNum(a, "require_magnet_rings"));
-    return makeConstraint("magnet_rings", {
-      inner_count: Math.max(1, Math.floor(args[0])),
-      outer_count: Math.max(1, Math.floor(args[1])),
-      magnet_size: Math.max(1e-6, args[2]),
-      min_gap: Math.max(0.0, args[3]),
-    });
-  }
-
-  if (name === "require_ring_height") {
-    if (args.length !== 1) throw new Error("require_ring_height(half_h) expects 1 arg");
-    ensureNum(args[0], "require_ring_height");
-    return makeConstraint("ring_height", { half_h: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_upper_bore") {
-    if (args.length !== 1) throw new Error("require_upper_bore(diameter) expects 1 arg");
-    ensureNum(args[0], "require_upper_bore");
-    return makeConstraint("upper_bore", { diameter: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_lower_bore_outer_max") {
-    if (args.length !== 1) throw new Error("require_lower_bore_outer_max(diameter) expects 1 arg");
-    ensureNum(args[0], "require_lower_bore_outer_max");
-    return makeConstraint("lower_bore_outer_max", { diameter: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_middle_bore") {
-    if (args.length !== 1) throw new Error("require_middle_bore(diameter) expects 1 arg");
-    ensureNum(args[0], "require_middle_bore");
-    return makeConstraint("middle_bore", { diameter: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_lower_to_middle") {
-    if (args.length !== 1) throw new Error("require_lower_to_middle(distance) expects 1 arg");
-    ensureNum(args[0], "require_lower_to_middle");
-    return makeConstraint("lower_to_middle", { distance: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_middle_to_upper") {
-    if (args.length !== 1) throw new Error("require_middle_to_upper(distance) expects 1 arg");
-    ensureNum(args[0], "require_middle_to_upper");
-    return makeConstraint("middle_to_upper", { distance: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "require_wall_min") {
-    if (args.length !== 1) throw new Error("require_wall_min(thickness) expects 1 arg");
-    ensureNum(args[0], "require_wall_min");
-    return makeConstraint("wall_min", { thickness: Math.max(1e-6, args[0]) });
-  }
-
-  if (name === "objective_maximize_internal_volume") {
-    if (args.length !== 1) throw new Error("objective_maximize_internal_volume(weight) expects 1 arg");
-    ensureNum(args[0], "objective_maximize_internal_volume");
-    return makeConstraint("objective_maximize_internal_volume", { weight: Math.max(0.0, args[0]) });
-  }
-
-  if (name === "objective_minimize_height") {
-    if (args.length !== 1) throw new Error("objective_minimize_height(weight) expects 1 arg");
-    ensureNum(args[0], "objective_minimize_height");
-    return makeConstraint("objective_minimize_height", { weight: Math.max(0.0, args[0]) });
-  }
-
-  if (name === "require_continuous_wall") {
-    if (args.length !== 1) throw new Error("require_continuous_wall(enabled) expects 1 arg");
-    ensureNum(args[0], "require_continuous_wall");
-    return makeConstraint("require_continuous_wall", { enabled: args[0] !== 0 });
-  }
-
   if (name === "synthesize") {
     if (args.length < 1) throw new Error("synthesize(c1, c2, ...) expects at least 1 constraint");
     if (typeof args[0] === "string") {
@@ -807,12 +720,6 @@ function builtins(name, args) {
     }
     args.forEach((a) => ensureConstraint(a, "synthesize"));
     return synthesizeFromConstraints(args);
-  }
-
-  if (name === "synthesize_bowlwell") {
-    if (args.length < 1) throw new Error("synthesize_bowlwell(c1, c2, ...) expects at least 1 constraint");
-    args.forEach((a) => ensureConstraint(a, "synthesize_bowlwell"));
-    return synthesizeBowlwellFromConstraints(args);
   }
 
   if (name === "void_cylinder") {
@@ -1165,7 +1072,28 @@ function applyCameraPreset(name) {
   cameraState.dist = p.camera.dist;
   cameraState.pitch = p.camera.pitch;
   cameraState.yaw = p.camera.yaw;
-  cameraState.target.set(0, 0, 0);
+  const t = p.camera.target || [0, 0, 0];
+  cameraState.target.set(t[0], t[1], t[2]);
+}
+
+async function loadScriptFromServer(scriptName) {
+  const r = await fetch(`/script/${encodeURIComponent(scriptName)}`);
+  if (!r.ok) {
+    throw new Error(`script '${scriptName}' not found`);
+  }
+  return await r.text();
+}
+
+function resolveInitialPresetFromQuery() {
+  const p = new URLSearchParams(location.search);
+  const script = p.get("script");
+  if (!script) return activePreset;
+  const key = script.toLowerCase();
+  if (key === "bowl_well" || key === "bowlwell") return "bowlwell";
+  if (key === "ring" || key === "ring_cutouts") return "ring-cutouts";
+  if (key === "deep_well" || key === "deepwell") return "deepwell";
+  if (key === "tube") return "tube";
+  return activePreset;
 }
 
 function refreshTopologyMeta() {
@@ -1200,18 +1128,22 @@ function compileAndSend() {
   }
 }
 
-function loadPreset(name) {
+async function loadPreset(name) {
   const preset = PRESETS[name];
   if (!preset) return;
   activePreset = name;
-  editor.value = preset.script;
+  try {
+    editor.value = await loadScriptFromServer(preset.scriptFile);
+  } catch (_) {
+    editor.value = preset.script;
+  }
   applyCameraPreset(name);
   compileAndSend();
 }
 
 ws.addEventListener("open", () => {
   log("ws connected");
-  compileAndSend();
+  loadPreset(resolveInitialPresetFromQuery());
 });
 
 ws.addEventListener("message", (evt) => {
@@ -1301,7 +1233,7 @@ void main() {
     float eps = max(0.0009, 0.00002 * length(ro));
     if(abs(d) < eps){ hit = true; break; }
     t += clamp(abs(d), 0.01, 3.2);
-    if(t > 12.0) break;
+    if(t > 1200.0) break;
   }
 
   if(!hit){
@@ -1391,7 +1323,6 @@ window.addEventListener("resize", resize);
 
 resize();
 render();
-loadPreset(activePreset);
 
 function evalTopology(program, x, y, z) {
   const m = new Map();
