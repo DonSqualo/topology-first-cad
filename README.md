@@ -29,6 +29,7 @@ Topology-first implicit CAD kernel from scratch.
 ```bash
 cargo run -p morse-server
 # open http://127.0.0.1:8787
+# or: PORT=8790 cargo run -p morse-server
 ```
 
 ## Status vs target roadmap

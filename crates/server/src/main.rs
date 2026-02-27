@@ -64,7 +64,8 @@ async fn main() {
         .route("/style.css", get(style_css))
         .route("/ws", get(ws_handler));
 
-    let addr: SocketAddr = "127.0.0.1:8787".parse().expect("valid socket address");
+    let port = std::env::var("PORT").ok().and_then(|v| v.parse::<u16>().ok()).unwrap_or(8787);
+    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().expect("valid socket address");
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind listener");
     println!("morse-server listening on http://{addr}");
     axum::serve(listener, app).await.expect("serve axum app");
