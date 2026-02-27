@@ -1,10 +1,12 @@
 use crate::ad::eval_ad;
 use crate::eval::{eval, Point};
-use crate::expr::{bowl_well_hallbach, sphere, tube, Expr};
+use crate::expr::{bowl_well_hallbach, deep_well_hallbach, ring_cutout_demo_hallbach, sphere, tube, Expr};
 use crate::glsl::to_glsl;
 use crate::interval::{eval_interval, Interval};
 use crate::morse::refine_critical;
 use crate::topology::{expr_to_topology, topology_to_expr};
+use crate::topology::{TopologyNode, TopologyProgram, TopologySignature};
+use serde_json::json;
 
 #[test]
 fn sphere_eval_signs() {
@@ -84,4 +86,60 @@ fn bowl_well_has_material_and_void_regions() {
     assert!(eval(&b, Point { x: 0.23, y: 0.0, z: 0.3 }) < 0.0);
     // Axis bore should be empty.
     assert!(eval(&b, Point { x: 0.0, y: 0.0, z: 0.3 }) > 0.0);
+}
+
+#[test]
+fn deep_well_has_wall_and_void() {
+    let d = deep_well_hallbach(0.03);
+    assert!(eval(&d, Point { x: 0.35, y: 0.0, z: 0.2 }) < 0.0);
+    assert!(eval(&d, Point { x: 0.0, y: 0.0, z: 0.2 }) > 0.0);
+}
+
+#[test]
+fn ring_cutout_removes_material() {
+    let r = ring_cutout_demo_hallbach(0.03);
+    assert!(eval(&r, Point { x: 0.8, y: 0.0, z: 0.45 }) > 0.0);
+}
+
+#[test]
+fn topology_primitive_ops_compile() {
+    let topo = TopologyProgram {
+        format: "morse.topo.v1".to_string(),
+        root: "n4".to_string(),
+        nodes: vec![
+            TopologyNode {
+                id: "n1".to_string(),
+                op: "sphere".to_string(),
+                inputs: vec![],
+                params: json!({ "r": 1.0 }),
+            },
+            TopologyNode {
+                id: "n2".to_string(),
+                op: "cylinder".to_string(),
+                inputs: vec![],
+                params: json!({ "r": 0.25, "h": 2.0 }),
+            },
+            TopologyNode {
+                id: "n3".to_string(),
+                op: "translate".to_string(),
+                inputs: vec!["n2".to_string()],
+                params: json!({ "dx": 0.75, "dy": 0.0, "dz": 0.0 }),
+            },
+            TopologyNode {
+                id: "n4".to_string(),
+                op: "difference".to_string(),
+                inputs: vec!["n1".to_string(), "n3".to_string()],
+                params: json!({}),
+            },
+        ],
+        invariants: vec!["field_is_truth".to_string()],
+        signature: TopologySignature {
+            betti_hint: [1, 0, 0],
+            euler_hint: 1,
+            genus_hint: 0,
+        },
+    };
+    let e = topology_to_expr(&topo).expect("compile topology");
+    assert!(eval(&e, Point { x: 0.0, y: 0.0, z: 0.0 }) < 0.0);
+    assert!(eval(&e, Point { x: 0.75, y: 0.0, z: 0.2 }) > 0.0);
 }

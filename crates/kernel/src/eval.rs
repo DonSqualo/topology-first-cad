@@ -43,5 +43,18 @@ pub fn eval(expr: &Expr, p: Point) -> f64 {
                 z: p.z - dz,
             },
         ),
+        Expr::RotateZ { expr, deg } => {
+            let a = (-deg).to_radians();
+            let c = a.cos();
+            let s = a.sin();
+            eval(
+                expr,
+                Point {
+                    x: c * p.x - s * p.y,
+                    y: s * p.x + c * p.y,
+                    z: p.z,
+                },
+            )
+        }
     }
 }

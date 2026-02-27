@@ -14,6 +14,8 @@ Topology-first implicit CAD kernel from scratch.
 - Expression tree (`Expr`) with arithmetic, trig, booleans, smooth booleans, transforms
 - Tube primitive (`tube(outer_r, inner_r, half_h)`)
 - BowlWell primitive (`bowl_well_hallbach(scale)`) from `hallbach.lua`
+- DeepWell primitive (`deep_well_hallbach(scale)`) from `hallbach.lua`
+- Ring-cutout demo primitive (`ring_cutout_demo_hallbach(scale)`) from `hallbach.lua`
 - Evaluators:
   - Point eval
   - Interval eval
@@ -22,6 +24,10 @@ Topology-first implicit CAD kernel from scratch.
 - Topology transport:
   - `morse.topo.v1` graph format (nodes + root + invariants + topological signature)
   - `expr_to_topology` and `topology_to_expr`
+- Topology language (browser editor):
+  - Lua-like line assignments + function calls
+  - chain methods: `:at(x,y,z)`, `:rotz(a)`
+  - shape ops: `sphere`, `cylinder`, `box`, `torus`, `tube`, `union`, `intersect`, `subtract`
 - Morse analysis foundations:
   - Finite-difference Hessian
   - Newton critical point refinement
@@ -30,8 +36,8 @@ Topology-first implicit CAD kernel from scratch.
   - `topology_scene`, `glsl_topology`, `critical_topology`
   - legacy `eval`, `grad`, `critical`, `glsl` commands
 - Three.js viewer with Mittens-style panel workflow:
-  - topology-driven rebuild
-  - scene switching (`tube`, `bowlwell`)
+  - topology-driven rebuild from script editor
+  - hallbach-inspired presets (`tube`, `bowlwell`, `deepwell`, `ring-cutouts`)
   - orbit camera
   - browser-side STL meshing/export (marching tetrahedra)
 

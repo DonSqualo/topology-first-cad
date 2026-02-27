@@ -10,30 +10,26 @@
     <main class="layout">
       <aside class="panel">
         <h1>Morse Topology CAD</h1>
-        <p class="muted">Topology graph over websocket. Mesh only as browser export.</p>
+        <p class="muted">Lua-like topology scripts over websocket. STL export remains browser-only.</p>
 
         <section class="card">
-          <h2>Scene</h2>
-          <label>
-            Model
-            <select id="scene">
-              <option value="tube">Tube</option>
-              <option value="bowlwell">BowlWell (hallbach.lua)</option>
-            </select>
-          </label>
-          <label>BowlWell Scale <input id="scale" type="range" min="0.005" max="0.08" step="0.001" value="0.02" /></label>
+          <h2>Scene Presets</h2>
+          <div class="presetGrid">
+            <button class="presetBtn" data-preset="tube">Tube</button>
+            <button class="presetBtn" data-preset="bowlwell">Bowlwell</button>
+            <button class="presetBtn" data-preset="deepwell">Deepwell</button>
+            <button class="presetBtn" data-preset="ring-cutouts">Ring Cutouts</button>
+          </div>
         </section>
 
         <section class="card">
-          <h2>Tube Params</h2>
-          <label>Outer Radius <input id="outerR" type="range" min="0.6" max="2.0" step="0.01" value="1.1" /></label>
-          <label>Inner Radius <input id="innerR" type="range" min="0.2" max="1.8" step="0.01" value="0.65" /></label>
-          <label>Half Height <input id="halfH" type="range" min="0.3" max="2.0" step="0.01" value="1.1" /></label>
-          <button id="rebuild">Rebuild Topology</button>
+          <h2>Script</h2>
+          <textarea id="scriptEditor" spellcheck="false"></textarea>
+          <button id="runScript">Compile + Send Topology</button>
         </section>
 
         <section class="card actions">
-          <button id="critical">Find Critical (seed 0.7,0,0)</button>
+          <button id="critical">Find Critical</button>
           <button id="exportStl">Export STL (Browser Mesh)</button>
         </section>
 

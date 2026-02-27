@@ -24,6 +24,10 @@ pub enum Expr {
         dy: f64,
         dz: f64,
     },
+    RotateZ {
+        expr: Box<Expr>,
+        deg: f64,
+    },
 }
 
 impl Expr {
@@ -99,6 +103,31 @@ fn cylinder_z(r: f64) -> Expr {
         .mul(Expr::X)
         .add(Expr::Y.mul(Expr::Y))
         .sub(Expr::c(r * r))
+}
+
+pub fn cylinder(radius: f64, height: f64) -> Expr {
+    let r2 = Expr::X.mul(Expr::X).add(Expr::Y.mul(Expr::Y)).sub(Expr::c(radius * radius));
+    let zcap = z_slab(0.0, height);
+    Expr::Max(Box::new(r2), Box::new(zcap))
+}
+
+pub fn box3(sx: f64, sy: f64, sz: f64) -> Expr {
+    let hx = sx * 0.5;
+    let hy = sy * 0.5;
+    let hz = sz * 0.5;
+    let x = Expr::X.mul(Expr::c(1.0)).sub(Expr::c(hx));
+    let xn = Expr::c(-hx).sub(Expr::X);
+    let y = Expr::Y.mul(Expr::c(1.0)).sub(Expr::c(hy));
+    let yn = Expr::c(-hy).sub(Expr::Y);
+    let z = Expr::Z.mul(Expr::c(1.0)).sub(Expr::c(hz));
+    let zn = Expr::c(-hz).sub(Expr::Z);
+    Expr::Max(
+        Box::new(Expr::Max(Box::new(x), Box::new(xn))),
+        Box::new(Expr::Max(
+            Box::new(Expr::Max(Box::new(y), Box::new(yn))),
+            Box::new(Expr::Max(Box::new(z), Box::new(zn))),
+        )),
+    )
 }
 
 fn z_slab(z0: f64, z1: f64) -> Expr {
@@ -177,4 +206,83 @@ pub fn bowl_well_hallbach(scale: f64) -> Expr {
     );
 
     subtract(base, groove)
+}
+
+pub fn deep_well_hallbach(scale: f64) -> Expr {
+    let s = scale.max(1e-6);
+    let ring_platform_height = 0.5 * s;
+    let deep_radius = 13.95 * s;
+    let deep_height = 32.5 * s;
+    let coverslip_radius = 10.0 * s;
+    let gap = 0.2 * s;
+    let wall = 1.1 * s;
+    let liquid_wall = 1.0 * s;
+
+    let outer = intersect(cylinder_z(deep_radius), z_slab(-ring_platform_height, -ring_platform_height + deep_height));
+    let bore_main = intersect(
+        cylinder_z(coverslip_radius + gap),
+        z_slab(-ring_platform_height + wall * 0.5, -ring_platform_height + wall * 0.5 + deep_height),
+    );
+    let bore_bottom = intersect(
+        cylinder_z((coverslip_radius - 2.0 * wall).max(0.2 * s)),
+        z_slab(-ring_platform_height, -ring_platform_height + (2.5 * s)),
+    );
+    let body = subtract(subtract(outer, bore_main), bore_bottom);
+
+    let top = subtract(
+        intersect(
+            cylinder_z(deep_radius + 2.0 * liquid_wall),
+            z_slab(-ring_platform_height + deep_height, -ring_platform_height + deep_height + liquid_wall),
+        ),
+        intersect(
+            cylinder_z(coverslip_radius + gap),
+            z_slab(-ring_platform_height + deep_height, -ring_platform_height + deep_height + 2.0 * liquid_wall),
+        ),
+    );
+
+    union(body, top)
+}
+
+pub fn ring_cutout_demo_hallbach(scale: f64) -> Expr {
+    let s = scale.max(1e-6);
+    let ring_height = 30.0 * s;
+    let center_hole = 12.5 * s;
+    let inner_radius = 31.0 * s;
+    let cutout_radius = 22.0 * s;
+    let magnet_size = 12.8 * s;
+
+    let body = subtract(
+        intersect(cylinder_z(inner_radius), z_slab(0.0, ring_height)),
+        intersect(cylinder_z(center_hole), z_slab(-1.0 * s, ring_height + 1.0 * s)),
+    );
+
+    let mut cuts: Option<Expr> = None;
+    for i in 0..8 {
+        let angle = (i as f64) * 45.0;
+        let rot = if i % 2 == 1 { 45.0 } else { 0.0 };
+        let base = box3(magnet_size, magnet_size, ring_height + 2.0 * s);
+        let r0 = Expr::RotateZ {
+            expr: Box::new(base),
+            deg: rot,
+        };
+        let t0 = Expr::Translate {
+            expr: Box::new(r0),
+            dx: cutout_radius,
+            dy: 0.0,
+            dz: ring_height * 0.5,
+        };
+        let cut = Expr::RotateZ {
+            expr: Box::new(t0),
+            deg: angle,
+        };
+        cuts = Some(match cuts {
+            Some(acc) => union(acc, cut),
+            None => cut,
+        });
+    }
+    if let Some(c) = cuts {
+        subtract(body, c)
+    } else {
+        body
+    }
 }

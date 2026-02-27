@@ -70,5 +70,29 @@ pub fn eval_interval(expr: &Expr, x: Interval, y: Interval, z: Interval) -> Inte
             Interval::new(a.lo.max(b.lo), a.hi.max(b.hi))
         }
         Expr::Translate { expr, .. } => eval_interval(expr, x, y, z),
+        Expr::RotateZ { expr, deg } => {
+            let a = (-deg).to_radians();
+            let c = a.cos();
+            let s = a.sin();
+            let corners = [
+                (x.lo, y.lo),
+                (x.lo, y.hi),
+                (x.hi, y.lo),
+                (x.hi, y.hi),
+            ];
+            let mut ux_lo = f64::INFINITY;
+            let mut ux_hi = f64::NEG_INFINITY;
+            let mut uy_lo = f64::INFINITY;
+            let mut uy_hi = f64::NEG_INFINITY;
+            for (cx, cy) in corners {
+                let u = c * cx - s * cy;
+                let v = s * cx + c * cy;
+                ux_lo = ux_lo.min(u);
+                ux_hi = ux_hi.max(u);
+                uy_lo = uy_lo.min(v);
+                uy_hi = uy_hi.max(v);
+            }
+            eval_interval(expr, Interval::new(ux_lo, ux_hi), Interval::new(uy_lo, uy_hi), z)
+        }
     }
 }

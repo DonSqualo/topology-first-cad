@@ -130,5 +130,21 @@ pub fn eval_ad(expr: &Expr, x: f64, y: f64, z: f64) -> AD1 {
             }
         }
         Expr::Translate { expr, dx, dy, dz } => eval_ad(expr, x - dx, y - dy, z - dz),
+        Expr::RotateZ { expr, deg } => {
+            let a = (-deg).to_radians();
+            let c = a.cos();
+            let s = a.sin();
+            let u = c * x - s * y;
+            let v = s * x + c * y;
+            let p = eval_ad(expr, u, v, z);
+            AD1 {
+                v: p.v,
+                g: [
+                    p.g[0] * c + p.g[1] * s,
+                    -p.g[0] * s + p.g[1] * c,
+                    p.g[2],
+                ],
+            }
+        }
     }
 }

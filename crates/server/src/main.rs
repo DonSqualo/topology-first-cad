@@ -11,7 +11,7 @@ use futures::StreamExt;
 use morse_kernel::{
     ad::eval_ad,
     eval::{eval, Point},
-    expr::{bowl_well_hallbach, sphere, tube, Expr},
+    expr::{bowl_well_hallbach, deep_well_hallbach, ring_cutout_demo_hallbach, sphere, tube, Expr},
     glsl::to_glsl,
     morse::refine_critical,
     topology::{expr_to_topology, topology_to_expr, TopologyProgram, TopologySignature},
@@ -176,6 +176,26 @@ fn route_request(req: Request) -> Response {
                 "bowlwell" => {
                     let s = scale.unwrap_or(0.02).clamp(0.005, 0.08);
                     let mut t = expr_to_topology(&bowl_well_hallbach(s));
+                    t.signature = TopologySignature {
+                        betti_hint: [1, 1, 0],
+                        euler_hint: 0,
+                        genus_hint: 0,
+                    };
+                    t
+                }
+                "deepwell" => {
+                    let s = scale.unwrap_or(0.03).clamp(0.005, 0.1);
+                    let mut t = expr_to_topology(&deep_well_hallbach(s));
+                    t.signature = TopologySignature {
+                        betti_hint: [1, 0, 0],
+                        euler_hint: 1,
+                        genus_hint: 0,
+                    };
+                    t
+                }
+                "ringcutouts" => {
+                    let s = scale.unwrap_or(0.03).clamp(0.005, 0.1);
+                    let mut t = expr_to_topology(&ring_cutout_demo_hallbach(s));
                     t.signature = TopologySignature {
                         betti_hint: [1, 1, 0],
                         euler_hint: 0,

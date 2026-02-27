@@ -1,5 +1,5 @@
 :root {
-  --bg: #f0f2f5;
+  --bg: #eef3f7;
   --panel: #171d28;
   --card: #222b3a;
   --text: #f4f7fb;
@@ -23,7 +23,7 @@ body {
 .layout {
   height: 100%;
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 390px 1fr;
 }
 
 .panel {
@@ -60,25 +60,10 @@ h2 {
   margin-bottom: 10px;
 }
 
-label {
-  display: block;
-  font-size: 12px;
-  color: #c9d9ef;
-  margin-bottom: 10px;
-}
-
-input[type="range"] {
-  width: 100%;
-}
-
-select {
-  width: 100%;
-  margin-top: 4px;
-  padding: 7px 8px;
-  border-radius: 7px;
-  border: 1px solid #3f5169;
-  background: #0f1520;
-  color: #eaf3ff;
+.presetGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 button {
@@ -93,6 +78,10 @@ button {
   cursor: pointer;
 }
 
+.presetBtn {
+  margin-top: 0;
+}
+
 button:hover {
   filter: brightness(1.08);
 }
@@ -100,6 +89,20 @@ button:hover {
 .actions {
   display: grid;
   gap: 6px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 260px;
+  border-radius: 8px;
+  border: 1px solid #3f5169;
+  background: #0f1520;
+  color: #d9ebff;
+  padding: 9px;
+  resize: vertical;
+  font-family: "Iosevka", "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 pre {
@@ -132,6 +135,10 @@ pre {
   .panel {
     border-right: 0;
     border-bottom: 1px solid #3a465a;
-    max-height: 44vh;
+    max-height: 56vh;
+  }
+
+  textarea {
+    min-height: 200px;
   }
 }

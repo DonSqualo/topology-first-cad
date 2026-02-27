@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::expr::Expr;
+use crate::expr::{box3, cylinder, sphere, torus, Expr};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TopologyNode {
@@ -172,6 +172,17 @@ pub fn expr_to_topology(expr: &Expr) -> TopologyProgram {
                 });
                 id
             }
+            Expr::RotateZ { expr, deg } => {
+                let ei = walk(expr, nodes, next_id);
+                let id = mk(next_id);
+                nodes.push(TopologyNode {
+                    id: id.clone(),
+                    op: "rotate_z".to_string(),
+                    inputs: vec![ei],
+                    params: json!({ "deg": deg }),
+                });
+                id
+            }
         }
     }
 
@@ -214,6 +225,46 @@ pub fn topology_to_expr(program: &TopologyProgram) -> Result<Expr, String> {
             "x" => Expr::X,
             "y" => Expr::Y,
             "z" => Expr::Z,
+            "sphere" => sphere(
+                node.params
+                    .get("r")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "sphere missing numeric r".to_string())?,
+            ),
+            "cylinder" => cylinder(
+                node.params
+                    .get("r")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "cylinder missing numeric r".to_string())?,
+                node.params
+                    .get("h")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "cylinder missing numeric h".to_string())?,
+            ),
+            "box" => box3(
+                node.params
+                    .get("sx")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "box missing numeric sx".to_string())?,
+                node.params
+                    .get("sy")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "box missing numeric sy".to_string())?,
+                node.params
+                    .get("sz")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "box missing numeric sz".to_string())?,
+            ),
+            "torus" => torus(
+                node.params
+                    .get("major_r")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "torus missing numeric major_r".to_string())?,
+                node.params
+                    .get("minor_r")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "torus missing numeric minor_r".to_string())?,
+            ),
             "add" => {
                 let (a, b) = get2(&built, &node.inputs)?;
                 Expr::Add(Box::new(a), Box::new(b))
@@ -294,6 +345,33 @@ pub fn topology_to_expr(program: &TopologyProgram) -> Result<Expr, String> {
                     dy,
                     dz,
                 }
+            }
+            "rotate_z" => {
+                if node.inputs.len() != 1 {
+                    return Err("rotate_z expects 1 input".to_string());
+                }
+                let e = get1(&built, &node.inputs[0])?;
+                let deg = node
+                    .params
+                    .get("deg")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| "rotate_z missing numeric deg".to_string())?;
+                Expr::RotateZ {
+                    expr: Box::new(e),
+                    deg,
+                }
+            }
+            "union" => {
+                let (a, b) = get2(&built, &node.inputs)?;
+                Expr::Min(Box::new(a), Box::new(b))
+            }
+            "intersect" => {
+                let (a, b) = get2(&built, &node.inputs)?;
+                Expr::Max(Box::new(a), Box::new(b))
+            }
+            "difference" => {
+                let (a, b) = get2(&built, &node.inputs)?;
+                Expr::Max(Box::new(a), Box::new(Expr::Neg(Box::new(b))))
             }
             _ => return Err(format!("unsupported topology op: {}", node.op)),
         };
