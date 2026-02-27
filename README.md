@@ -28,7 +28,10 @@ Topology-first implicit CAD kernel from scratch.
   - Lua-like line assignments + function calls
   - chain methods: `:at(x,y,z)`, `:rotz(a)`
   - shape ops: `sphere`, `cylinder`, `box`, `torus`, `tube`, `union`, `intersect`, `subtract`
-  - constraint-first ops: `halbach_from_constraints`, `void_cylinder`, `apply_voids`, `repeat_polar`
+  - constraint-first ops:
+    - `require_coverslip`, `require_center_hole`, `require_magnet_rings`, `require_ring_height`
+    - `synthesize(c1, c2, ...)`
+    - `void_cylinder`, `apply_voids`, `repeat_polar`
 - Morse analysis foundations:
   - Finite-difference Hessian
   - Newton critical point refinement

@@ -71,22 +71,19 @@ result = union(body, top_lip)
     criticalSeed: [1.0, 0.0, 0.0],
     exportMesh: { min: -2.3, max: 2.3, res: 42 },
     camera: { dist: 4.0, pitch: 0.32, yaw: 0.58 },
-    script: `-- Constraint-first Halbach ring description
-coverslip_d = 20
-center_hole_d = 25
-magnet_size = 12.8
-inner_count = 8
-outer_count = 12
-min_gap = 0.35
-ring_h = 1.15
+    script: `-- Constraint-first Halbach ring (no direct geometry authoring)
+c1 = require_coverslip(20)
+c2 = require_center_hole(25)
+c3 = require_magnet_rings(8, 12, 12.8, 0.35)
+c4 = require_ring_height(1.15)
 
-core = halbach_from_constraints(coverslip_d, center_hole_d, magnet_size, inner_count, outer_count, min_gap, ring_h)
+base = synthesize(c1, c2, c3, c4)
 
--- Explicit negative-space constraints (must not contain material)
-v1 = void_cylinder(0, 0, 0, 0.24, 1.6)
+-- Negative-space constraints: these regions must remain empty
+v1 = void_cylinder(0.0, 0.0, 0.0, 0.24, 1.6)
 v2 = void_cylinder(0.0, 0.0, 0.8, 0.16, 0.22)
 
-result = apply_voids(core, v1, v2)
+result = apply_voids(base, v1, v2)
 `,
   },
 };
@@ -118,6 +115,10 @@ function send(msg) {
 
 function isShape(v) {
   return Boolean(v && typeof v === "object" && typeof v.sdf === "function");
+}
+
+function isConstraint(v) {
+  return Boolean(v && typeof v === "object" && v.__constraint === true);
 }
 
 class TopologyBuilder {
@@ -233,6 +234,45 @@ function shapeSub(a, b) {
   return makeShape((coord, builder) => builder.max(a.sdf(coord, builder), builder.neg(b.sdf(coord, builder))));
 }
 
+function makeConstraint(kind, data) {
+  return { __constraint: true, kind, data };
+}
+
+function synthesizeFromConstraints(constraints) {
+  const cfg = {
+    coverslip_d: 20.0,
+    center_hole_d: 25.0,
+    magnet_size: 12.8,
+    inner_count: 8,
+    outer_count: 12,
+    min_gap: 0.35,
+    ring_half_h: 1.15,
+  };
+
+  constraints.forEach((c) => {
+    if (!isConstraint(c)) throw new Error("synthesize expects constraint values");
+    if (c.kind === "coverslip") cfg.coverslip_d = c.data.diameter;
+    if (c.kind === "center_hole") cfg.center_hole_d = c.data.diameter;
+    if (c.kind === "magnet_rings") {
+      cfg.inner_count = c.data.inner_count;
+      cfg.outer_count = c.data.outer_count;
+      cfg.magnet_size = c.data.magnet_size;
+      cfg.min_gap = c.data.min_gap;
+    }
+    if (c.kind === "ring_height") cfg.ring_half_h = c.data.half_h;
+  });
+
+  return halbachFromConstraints(
+    cfg.coverslip_d,
+    cfg.center_hole_d,
+    cfg.magnet_size,
+    cfg.inner_count,
+    cfg.outer_count,
+    cfg.min_gap,
+    cfg.ring_half_h,
+  );
+}
+
 function polarInstances(shape, count, radius, startA = 0.0, stepA = null) {
   const c = Math.max(1, Math.floor(count));
   const step = stepA == null ? (Math.PI * 2.0) / c : stepA;
@@ -295,6 +335,10 @@ function ensureShape(v, context) {
 
 function ensureNum(v, context) {
   if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${context} expects a number`);
+}
+
+function ensureConstraint(v, context) {
+  if (!isConstraint(v)) throw new Error(`${context} expects a constraint`);
 }
 
 function foldShape(fn, args, context) {
@@ -371,6 +415,41 @@ function builtins(name, args) {
     }
     args.forEach((a) => ensureNum(a, "halbach_from_constraints"));
     return halbachFromConstraints(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+  }
+
+  if (name === "require_coverslip") {
+    if (args.length !== 1) throw new Error("require_coverslip(diameter) expects 1 arg");
+    ensureNum(args[0], "require_coverslip");
+    return makeConstraint("coverslip", { diameter: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_center_hole") {
+    if (args.length !== 1) throw new Error("require_center_hole(diameter) expects 1 arg");
+    ensureNum(args[0], "require_center_hole");
+    return makeConstraint("center_hole", { diameter: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_magnet_rings") {
+    if (args.length !== 4) throw new Error("require_magnet_rings(inner_count, outer_count, magnet_size, min_gap) expects 4 args");
+    args.forEach((a) => ensureNum(a, "require_magnet_rings"));
+    return makeConstraint("magnet_rings", {
+      inner_count: Math.max(1, Math.floor(args[0])),
+      outer_count: Math.max(1, Math.floor(args[1])),
+      magnet_size: Math.max(1e-6, args[2]),
+      min_gap: Math.max(0.0, args[3]),
+    });
+  }
+
+  if (name === "require_ring_height") {
+    if (args.length !== 1) throw new Error("require_ring_height(half_h) expects 1 arg");
+    ensureNum(args[0], "require_ring_height");
+    return makeConstraint("ring_height", { half_h: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "synthesize") {
+    if (args.length < 1) throw new Error("synthesize(c1, c2, ...) expects at least 1 constraint");
+    args.forEach((a) => ensureConstraint(a, "synthesize"));
+    return synthesizeFromConstraints(args);
   }
 
   if (name === "void_cylinder") {
