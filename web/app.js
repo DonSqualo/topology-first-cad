@@ -115,6 +115,12 @@ const cameraState = {
   lx: 0,
   ly: 0,
 };
+const touchState = {
+  mode: "none",
+  lastDist: 0,
+  lastCx: 0,
+  lastCy: 0,
+};
 
 function log(msg) {
   out.textContent = `${msg}\n${out.textContent}`.slice(0, 7000);
@@ -1351,11 +1357,84 @@ window.addEventListener("mousemove", (e) => {
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   cameraState.dist = Math.max(0.5, Math.min(5000.0, cameraState.dist + e.deltaY * 0.15));
-});
+}, { passive: false });
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (e) => {
   if (e.key === "f" || e.key === "F") fitView();
 });
+
+function touchDist(t0, t1) {
+  return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+}
+
+canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 1) {
+    touchState.mode = "orbit";
+    touchState.lastCx = e.touches[0].clientX;
+    touchState.lastCy = e.touches[0].clientY;
+  } else if (e.touches.length >= 2) {
+    touchState.mode = "pinch";
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    touchState.lastDist = touchDist(t0, t1);
+    touchState.lastCx = (t0.clientX + t1.clientX) * 0.5;
+    touchState.lastCy = (t0.clientY + t1.clientY) * 0.5;
+  }
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  if (touchState.mode === "orbit" && e.touches.length === 1) {
+    const t = e.touches[0];
+    const dx = t.clientX - touchState.lastCx;
+    const dy = t.clientY - touchState.lastCy;
+    touchState.lastCx = t.clientX;
+    touchState.lastCy = t.clientY;
+    cameraState.yaw += dx * 0.007;
+    cameraState.pitch = Math.max(-1.35, Math.min(1.35, cameraState.pitch + dy * 0.006));
+  } else if (touchState.mode === "pinch" && e.touches.length >= 2) {
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    const d = touchDist(t0, t1);
+    const cx = (t0.clientX + t1.clientX) * 0.5;
+    const cy = (t0.clientY + t1.clientY) * 0.5;
+
+    const dd = d - touchState.lastDist;
+    cameraState.dist = Math.max(0.5, Math.min(5000.0, cameraState.dist - dd * 0.35));
+
+    const pdx = cx - touchState.lastCx;
+    const pdy = cy - touchState.lastCy;
+    const ro = cameraPos();
+    const fw = cameraState.target.clone().sub(ro).normalize();
+    const rt = new THREE.Vector3().crossVectors(fw, new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(rt, fw).normalize();
+    const panScale = cameraState.dist * 0.0012;
+    cameraState.target.addScaledVector(rt, -pdx * panScale);
+    cameraState.target.addScaledVector(up, pdy * panScale);
+
+    touchState.lastDist = d;
+    touchState.lastCx = cx;
+    touchState.lastCy = cy;
+  }
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener("touchend", (e) => {
+  if (e.touches.length === 0) {
+    touchState.mode = "none";
+  } else if (e.touches.length === 1) {
+    touchState.mode = "orbit";
+    touchState.lastCx = e.touches[0].clientX;
+    touchState.lastCy = e.touches[0].clientY;
+  } else {
+    touchState.mode = "pinch";
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    touchState.lastDist = touchDist(t0, t1);
+    touchState.lastCx = (t0.clientX + t1.clientX) * 0.5;
+    touchState.lastCy = (t0.clientY + t1.clientY) * 0.5;
+  }
+}, { passive: false });
 
 resize();
 render();
