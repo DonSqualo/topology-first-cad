@@ -32,20 +32,19 @@ result = tube(outer_r, inner_r, half_h)
     criticalSeed: [0.0, 0.0, 35.0],
     exportMesh: { min: -40, max: 90, res: 52 },
     camera: { dist: 150, pitch: 0.34, yaw: 0.52 },
-    script: `-- Generic constraint DSL (model-agnostic)
--- Targets:
--- upper bore = 50mm
--- lower bore outer max = 24.5mm
--- middle bore = 24.5mm, min distance from lower = 30mm
--- middle to upper = 40mm
--- continuous wall, maximize internal volume under wall_min
+    script: `-- Feature + relationship DSL
+lower = bore("lower", 24.5)
+middle = bore("middle", 24.5)
+upper = bore("upper", 50)
 
-result = synthesize("bowlwell",
-  require("upper_bore", 50),
-  require("lower_bore_outer_max", 24.5),
-  require("middle_bore", 24.5),
-  require("lower_to_middle", 30),
-  require("middle_to_upper", 40),
+-- relationships between features
+r1 = relate("min_distance", middle, lower, 30)
+r2 = relate("distance", upper, middle, 40)
+r3 = relate("outer_max", lower, 24.5)
+
+result = synthesize("bore_stack",
+  lower, middle, upper,
+  r1, r2, r3,
   require("wall_min", 1.5),
   objective("maximize_internal_volume", 1.0),
   objective("minimize_height", 0.35)
@@ -130,6 +129,10 @@ function isShape(v) {
 
 function isConstraint(v) {
   return Boolean(v && typeof v === "object" && v.__constraint === true);
+}
+
+function isFeature(v) {
+  return Boolean(v && typeof v === "object" && v.__feature === true);
 }
 
 class TopologyBuilder {
@@ -247,6 +250,10 @@ function shapeSub(a, b) {
 
 function makeConstraint(kind, data) {
   return { __constraint: true, kind, data };
+}
+
+function makeFeature(kind, data) {
+  return { __feature: true, kind, data };
 }
 
 function synthesizeFromConstraints(constraints) {
@@ -373,6 +380,60 @@ function synthesizeBowlwellFromConstraints(constraints) {
   };
 
   return shapeSub(outer, cavity);
+}
+
+function synthesizeBoreStack(items) {
+  const features = new Map();
+  const relations = [];
+  const extras = [];
+  items.forEach((it) => {
+    if (isFeature(it) && it.kind === "bore") {
+      features.set(String(it.data.name).toLowerCase(), it);
+      return;
+    }
+    if (isConstraint(it) && it.kind === "relation") {
+      relations.push(it);
+      return;
+    }
+    extras.push(it);
+  });
+
+  const lower = features.get("lower");
+  const middle = features.get("middle");
+  const upper = features.get("upper");
+  if (!lower || !middle || !upper) {
+    throw new Error("bore_stack requires bore(\"lower\"), bore(\"middle\"), bore(\"upper\")");
+  }
+
+  let lowerOuterMax = lower.data.diameter;
+  let lowerToMiddle = 30.0;
+  let middleToUpper = 40.0;
+  relations.forEach((r) => {
+    const kind = String(r.data.kind).toLowerCase();
+    const a = String(r.data.a || "").toLowerCase();
+    const b = String(r.data.b || "").toLowerCase();
+    if (kind === "outer_max" && a === "lower") {
+      lowerOuterMax = r.data.value;
+    }
+    if (kind === "min_distance" && a === "middle" && b === "lower") {
+      lowerToMiddle = Math.max(lowerToMiddle, r.data.value);
+    }
+    if (kind === "distance" && a === "upper" && b === "middle") {
+      middleToUpper = r.data.value;
+    }
+  });
+
+  const cs = [
+    makeConstraint("upper_bore", { diameter: upper.data.diameter }),
+    makeConstraint("lower_bore_outer_max", { diameter: lowerOuterMax }),
+    makeConstraint("middle_bore", { diameter: middle.data.diameter }),
+    makeConstraint("lower_to_middle", { distance: lowerToMiddle }),
+    makeConstraint("middle_to_upper", { distance: middleToUpper }),
+  ];
+  extras.forEach((e) => {
+    if (isConstraint(e)) cs.push(e);
+  });
+  return synthesizeBowlwellFromConstraints(cs);
 }
 
 function polarInstances(shape, count, radius, startA = 0.0, stepA = null) {
@@ -615,6 +676,43 @@ function builtins(name, args) {
     return makeConstraint("objective_generic", { key: args[0], weight: Math.max(0.0, args[1]) });
   }
 
+  if (name === "bore") {
+    if (args.length !== 2) throw new Error("bore(name, diameter) expects 2 args");
+    ensureText(args[0], "bore");
+    ensureNum(args[1], "bore");
+    return makeFeature("bore", { name: args[0], diameter: Math.max(1e-6, args[1]) });
+  }
+
+  if (name === "handle") {
+    if (args.length !== 2) throw new Error("handle(name, diameter) expects 2 args");
+    ensureText(args[0], "handle");
+    ensureNum(args[1], "handle");
+    return makeFeature("handle", { name: args[0], diameter: Math.max(1e-6, args[1]) });
+  }
+
+  if (name === "relate") {
+    if (args.length < 3 || args.length > 4) {
+      throw new Error("relate(kind, a, b_or_value[, value]) expects 3-4 args");
+    }
+    ensureText(args[0], "relate");
+    const kind = args[0];
+    if (args.length === 3) {
+      if (!isFeature(args[1])) throw new Error("relate expects feature as second arg");
+      ensureNum(args[2], "relate");
+      return makeConstraint("relation", { kind, a: args[1].data.name, value: args[2] });
+    }
+    if (!isFeature(args[1]) || !isFeature(args[2])) {
+      throw new Error("relate expects features for 2nd and 3rd args");
+    }
+    ensureNum(args[3], "relate");
+    return makeConstraint("relation", {
+      kind,
+      a: args[1].data.name,
+      b: args[2].data.name,
+      value: args[3],
+    });
+  }
+
   if (name === "require_coverslip") {
     if (args.length !== 1) throw new Error("require_coverslip(diameter) expects 1 arg");
     ensureNum(args[0], "require_coverslip");
@@ -702,6 +800,7 @@ function builtins(name, args) {
     if (args.length < 1) throw new Error("synthesize(c1, c2, ...) expects at least 1 constraint");
     if (typeof args[0] === "string") {
       const model = args[0];
+      if (String(model).toLowerCase() === "bore_stack") return synthesizeBoreStack(args.slice(1));
       const set = toConstraintSet(model, args.slice(1));
       if (String(model).toLowerCase() === "bowlwell") return synthesizeBowlwellFromConstraints(set);
       return synthesizeFromConstraints(set);
