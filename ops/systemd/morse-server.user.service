@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/projects/topology-first-cad
 Environment=PORT=8790
+Environment=HOST=0.0.0.0
 ExecStart=/home/orbiter1/projects/topology-first-cad/target/release/morse-server
 Restart=on-failure
 RestartSec=2

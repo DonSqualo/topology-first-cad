@@ -9,6 +9,7 @@ User=orbiter1
 Group=orbiter1
 WorkingDirectory=/home/orbiter1/projects/topology-first-cad
 Environment=PORT=8790
+Environment=HOST=0.0.0.0
 ExecStart=/home/orbiter1/projects/topology-first-cad/target/release/morse-server
 Restart=on-failure
 RestartSec=2

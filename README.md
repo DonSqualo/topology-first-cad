@@ -30,11 +30,13 @@ Topology-first implicit CAD kernel from scratch.
 cargo run -p morse-server
 # open http://127.0.0.1:8787
 # or: PORT=8790 cargo run -p morse-server
+# or: HOST=0.0.0.0 PORT=8790 cargo run -p morse-server
 ```
 
 ## systemd + nginx + Tailscale
 Simple CLI: `ops/morsectl`
 Service default port for systemd/nginx is `8790` (to avoid common local conflicts on `8787`).
+systemd units set `HOST=0.0.0.0` so the app is reachable on your Tailscale `100.x` IP.
 
 User service (no sudo):
 ```bash
