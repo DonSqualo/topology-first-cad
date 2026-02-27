@@ -1030,13 +1030,39 @@ function compileScriptToTopology(src) {
   let lastShape = null;
 
   const lines = src.split(/\r?\n/);
+  const statements = [];
+  let cur = "";
+  let startLine = 1;
+  let depth = 0;
+
   for (let idx = 0; idx < lines.length; idx += 1) {
     const raw = lines[idx];
     const line = raw.replace(/--.*$/, "").trim();
     if (!line) continue;
 
+    if (!cur) startLine = idx + 1;
+    cur = cur ? `${cur} ${line}` : line;
+
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === "(") depth += 1;
+      if (ch === ")") depth -= 1;
+    }
+
+    if (depth <= 0) {
+      statements.push({ line: startLine, text: cur });
+      cur = "";
+      depth = 0;
+    }
+  }
+
+  if (cur) {
+    statements.push({ line: startLine, text: cur });
+  }
+
+  for (const stmt of statements) {
     try {
-      const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
+      const m = stmt.text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
       if (m) {
         const name = m[1];
         const expr = m[2];
@@ -1045,12 +1071,12 @@ function compileScriptToTopology(src) {
         env[name] = v;
         if (isShape(v)) lastShape = v;
       } else {
-        const ast = parseExpr(line);
+        const ast = parseExpr(stmt.text);
         const v = evalAst(ast, env);
         if (isShape(v)) lastShape = v;
       }
     } catch (e) {
-      throw new Error(`line ${idx + 1}: ${e.message}`);
+      throw new Error(`line ${stmt.line}: ${e.message}`);
     }
   }
 
