@@ -99,7 +99,16 @@ scene.add(quad);
 
 let mat = null;
 
-const cameraState = { yaw: 0.6, pitch: 0.25, dist: 3.2, drag: false, lx: 0, ly: 0 };
+const cameraState = {
+  yaw: 0.6,
+  pitch: 0.25,
+  dist: 3.2,
+  target: new THREE.Vector3(0, 0, 0),
+  drag: false,
+  mode: "orbit",
+  lx: 0,
+  ly: 0,
+};
 
 function log(msg) {
   out.textContent = `${msg}\n${out.textContent}`.slice(0, 7000);
@@ -785,6 +794,7 @@ function applyCameraPreset(name) {
   cameraState.dist = p.camera.dist;
   cameraState.pitch = p.camera.pitch;
   cameraState.yaw = p.camera.yaw;
+  cameraState.target.set(0, 0, 0);
 }
 
 function refreshTopologyMeta() {
@@ -884,6 +894,7 @@ precision highp float;
 out vec4 outColor;
 uniform vec2 uRes;
 uniform vec3 uCamPos;
+uniform vec3 uCamTarget;
 ${glslCode}
 
 vec3 calcNormal(vec3 p){
@@ -900,7 +911,7 @@ void main() {
   uv.x *= uRes.x / uRes.y;
 
   vec3 ro = uCamPos;
-  vec3 target = vec3(0.0);
+  vec3 target = uCamTarget;
   vec3 fw = normalize(target - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0,1.0,0.0)));
   vec3 up = normalize(cross(rt, fw));
@@ -934,6 +945,7 @@ void main() {
     uniforms: {
       uRes: { value: new THREE.Vector2(1, 1) },
       uCamPos: { value: new THREE.Vector3(0, 0, 3.2) },
+      uCamTarget: { value: new THREE.Vector3(0, 0, 0) },
     },
   });
   quad.material = mat;
@@ -942,11 +954,12 @@ void main() {
 
 function cameraPos() {
   const cp = Math.cos(cameraState.pitch);
-  return new THREE.Vector3(
+  const offset = new THREE.Vector3(
     cameraState.dist * cp * Math.sin(cameraState.yaw),
     cameraState.dist * Math.sin(cameraState.pitch),
     cameraState.dist * cp * Math.cos(cameraState.yaw),
   );
+  return offset.add(cameraState.target);
 }
 
 function resize() {
@@ -960,11 +973,15 @@ function render() {
   requestAnimationFrame(render);
   if (!mat) return;
   mat.uniforms.uCamPos.value.copy(cameraPos());
+  mat.uniforms.uCamTarget.value.copy(cameraState.target);
   renderer.render(scene, ortho);
 }
 
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
 canvas.addEventListener("mousedown", (e) => {
   cameraState.drag = true;
+  cameraState.mode = (e.button === 1 || e.button === 2 || e.shiftKey) ? "pan" : "orbit";
   cameraState.lx = e.clientX;
   cameraState.ly = e.clientY;
 });
@@ -977,12 +994,22 @@ window.addEventListener("mousemove", (e) => {
   const dy = e.clientY - cameraState.ly;
   cameraState.lx = e.clientX;
   cameraState.ly = e.clientY;
-  cameraState.yaw += dx * 0.007;
-  cameraState.pitch = Math.max(-1.35, Math.min(1.35, cameraState.pitch + dy * 0.006));
+  if (cameraState.mode === "pan") {
+    const ro = cameraPos();
+    const fw = cameraState.target.clone().sub(ro).normalize();
+    const rt = new THREE.Vector3().crossVectors(fw, new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(rt, fw).normalize();
+    const panScale = cameraState.dist * 0.0015;
+    cameraState.target.addScaledVector(rt, -dx * panScale);
+    cameraState.target.addScaledVector(up, dy * panScale);
+  } else {
+    cameraState.yaw += dx * 0.007;
+    cameraState.pitch = Math.max(-1.35, Math.min(1.35, cameraState.pitch + dy * 0.006));
+  }
 });
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
-  cameraState.dist = Math.max(1.2, Math.min(8.0, cameraState.dist + e.deltaY * 0.003));
+  cameraState.dist = Math.max(0.5, Math.min(12.0, cameraState.dist + e.deltaY * 0.003));
 });
 window.addEventListener("resize", resize);
 
