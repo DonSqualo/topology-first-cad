@@ -28,29 +28,25 @@ result = tube(outer_r, inner_r, half_h)
 `,
   },
   bowlwell: {
-    criticalSeed: [0.0, 0.0, 1.0],
-    exportMesh: { min: -2.8, max: 2.8, res: 44 },
-    camera: { dist: 4.8, pitch: 0.38, yaw: 0.55 },
-    script: `-- Hallbach-inspired BowlWell, scaled to viewport units
-radius = 1.45
-wall = 0.08
-inner_radius = radius - wall
-tube_outer = 0.36
-tube_inner = 0.30
-tube_h = 1.6
-thread_h = 0.28
-z_center = 1.05
+    criticalSeed: [0.0, 0.0, 35.0],
+    exportMesh: { min: -40, max: 90, res: 52 },
+    camera: { dist: 150, pitch: 0.34, yaw: 0.52 },
+    script: `-- Constraint-first BowlWell in mm
+-- Targets:
+-- upper bore = 50mm
+-- lower bore outer max = 24.5mm
+-- middle bore = 24.5mm, min distance from lower = 30mm
+-- middle to upper = 40mm
+-- continuous wall, maximize internal volume under wall_min
 
-shell = subtract(sphere(radius):at(0,0,z_center), sphere(inner_radius):at(0,0,z_center))
-open = box(4,4,2):at(0,0,z_center + 1.0)
-bowl = subtract(shell, open)
+b1 = require_upper_bore(50)
+b2 = require_lower_bore_outer_max(24.5)
+b3 = require_middle_bore(24.5)
+b4 = require_lower_to_middle(30)
+b5 = require_middle_to_upper(40)
+b6 = require_wall_min(1.5)
 
-tube = subtract(cylinder(tube_outer, tube_h):at(0,0,0.25), cylinder(tube_inner, tube_h + 0.02):at(0,0,0.25))
-thread_collar = subtract(cylinder(0.34, thread_h):at(0,0,-0.25), cylinder(0.31, thread_h + 0.02):at(0,0,-0.25))
-oring_groove = subtract(cylinder(0.335, 0.07):at(0,0,0.05), cylinder(0.27, 0.08):at(0,0,0.05))
-
-base = union(bowl, tube, thread_collar)
-result = subtract(base, oring_groove)
+result = synthesize_bowlwell(b1, b2, b3, b4, b5, b6)
 `,
   },
   deepwell: {
@@ -282,6 +278,62 @@ function synthesizeFromConstraints(constraints) {
   );
 }
 
+function synthesizeBowlwellFromConstraints(constraints) {
+  const cfg = {
+    upper_bore_d: 50.0,
+    lower_bore_outer_max_d: 24.5,
+    middle_bore_d: 24.5,
+    lower_to_middle: 30.0,
+    middle_to_upper: 40.0,
+    wall_min: 1.5,
+  };
+
+  constraints.forEach((c) => {
+    if (!isConstraint(c)) throw new Error("synthesize_bowlwell expects constraint values");
+    if (c.kind === "upper_bore") cfg.upper_bore_d = c.data.diameter;
+    if (c.kind === "lower_bore_outer_max") cfg.lower_bore_outer_max_d = c.data.diameter;
+    if (c.kind === "middle_bore") cfg.middle_bore_d = c.data.diameter;
+    if (c.kind === "lower_to_middle") cfg.lower_to_middle = c.data.distance;
+    if (c.kind === "middle_to_upper") cfg.middle_to_upper = c.data.distance;
+    if (c.kind === "wall_min") cfg.wall_min = c.data.thickness;
+  });
+
+  const wall = Math.max(0.4, cfg.wall_min);
+  const lowerOuterR = Math.max(1.0, cfg.lower_bore_outer_max_d * 0.5);
+  const lowerInnerR = Math.max(0.5, lowerOuterR - wall);
+  const middleInnerR = Math.min(Math.max(0.5, cfg.middle_bore_d * 0.5), lowerOuterR - wall);
+  const middleOuterR = middleInnerR + wall;
+  const upperInnerR = Math.max(middleInnerR + wall, cfg.upper_bore_d * 0.5);
+  const upperOuterR = upperInnerR + wall;
+
+  const zLowerMid = Math.max(4.0, cfg.lower_to_middle);
+  const zMidUpper = Math.max(4.0, cfg.middle_to_upper);
+  const zUpperBase = zLowerMid + zMidUpper;
+  const upperDepth = Math.max(18.0, 0.55 * cfg.upper_bore_d);
+
+  const lowerOuter = cylinderShape(lowerOuterR, zLowerMid * 0.5);
+  const lowerOuterAt = shapeAt(lowerOuter, 0, 0, zLowerMid * 0.5);
+  const middleOuter = cylinderShape(middleOuterR, zMidUpper * 0.5);
+  const middleOuterAt = shapeAt(middleOuter, 0, 0, zLowerMid + zMidUpper * 0.5);
+  const upperOuter = cylinderShape(upperOuterR, upperDepth * 0.5);
+  const upperOuterAt = shapeAt(upperOuter, 0, 0, zUpperBase + upperDepth * 0.5);
+  const upperCap = sphereShape(upperOuterR);
+  const upperCapAt = shapeAt(upperCap, 0, 0, zUpperBase + upperDepth);
+  const outer = shapeUnionMany([lowerOuterAt, middleOuterAt, upperOuterAt, upperCapAt]);
+
+  const lowerInner = cylinderShape(lowerInnerR, zLowerMid * 0.5 + 0.1);
+  const lowerInnerAt = shapeAt(lowerInner, 0, 0, zLowerMid * 0.5);
+  const middleInner = cylinderShape(middleInnerR, zMidUpper * 0.5 + 0.1);
+  const middleInnerAt = shapeAt(middleInner, 0, 0, zLowerMid + zMidUpper * 0.5);
+  const upperInner = cylinderShape(upperInnerR, upperDepth * 0.5 + 0.1);
+  const upperInnerAt = shapeAt(upperInner, 0, 0, zUpperBase + upperDepth * 0.5);
+  const upperInnerCap = sphereShape(upperInnerR);
+  const upperInnerCapAt = shapeAt(upperInnerCap, 0, 0, zUpperBase + upperDepth);
+  const cavity = shapeUnionMany([lowerInnerAt, middleInnerAt, upperInnerAt, upperInnerCapAt]);
+
+  return shapeSub(outer, cavity);
+}
+
 function polarInstances(shape, count, radius, startA = 0.0, stepA = null) {
   const c = Math.max(1, Math.floor(count));
   const step = stepA == null ? (Math.PI * 2.0) / c : stepA;
@@ -323,6 +375,15 @@ function cylinderShape(r, halfH) {
     const radial = b.sub(rr, b.num(r * r));
     const zcap = b.sub(b.mul(coord.z, coord.z), b.num(halfH * halfH));
     return b.max(radial, zcap);
+  });
+}
+
+function sphereShape(r) {
+  return makeShape((coord, b) => {
+    const xx = b.mul(coord.x, coord.x);
+    const yy = b.mul(coord.y, coord.y);
+    const zz = b.mul(coord.z, coord.z);
+    return b.sub(b.add(b.add(xx, yy), zz), b.num(r * r));
   });
 }
 
@@ -455,10 +516,52 @@ function builtins(name, args) {
     return makeConstraint("ring_height", { half_h: Math.max(1e-6, args[0]) });
   }
 
+  if (name === "require_upper_bore") {
+    if (args.length !== 1) throw new Error("require_upper_bore(diameter) expects 1 arg");
+    ensureNum(args[0], "require_upper_bore");
+    return makeConstraint("upper_bore", { diameter: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_lower_bore_outer_max") {
+    if (args.length !== 1) throw new Error("require_lower_bore_outer_max(diameter) expects 1 arg");
+    ensureNum(args[0], "require_lower_bore_outer_max");
+    return makeConstraint("lower_bore_outer_max", { diameter: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_middle_bore") {
+    if (args.length !== 1) throw new Error("require_middle_bore(diameter) expects 1 arg");
+    ensureNum(args[0], "require_middle_bore");
+    return makeConstraint("middle_bore", { diameter: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_lower_to_middle") {
+    if (args.length !== 1) throw new Error("require_lower_to_middle(distance) expects 1 arg");
+    ensureNum(args[0], "require_lower_to_middle");
+    return makeConstraint("lower_to_middle", { distance: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_middle_to_upper") {
+    if (args.length !== 1) throw new Error("require_middle_to_upper(distance) expects 1 arg");
+    ensureNum(args[0], "require_middle_to_upper");
+    return makeConstraint("middle_to_upper", { distance: Math.max(1e-6, args[0]) });
+  }
+
+  if (name === "require_wall_min") {
+    if (args.length !== 1) throw new Error("require_wall_min(thickness) expects 1 arg");
+    ensureNum(args[0], "require_wall_min");
+    return makeConstraint("wall_min", { thickness: Math.max(1e-6, args[0]) });
+  }
+
   if (name === "synthesize") {
     if (args.length < 1) throw new Error("synthesize(c1, c2, ...) expects at least 1 constraint");
     args.forEach((a) => ensureConstraint(a, "synthesize"));
     return synthesizeFromConstraints(args);
+  }
+
+  if (name === "synthesize_bowlwell") {
+    if (args.length < 1) throw new Error("synthesize_bowlwell(c1, c2, ...) expects at least 1 constraint");
+    args.forEach((a) => ensureConstraint(a, "synthesize_bowlwell"));
+    return synthesizeBowlwellFromConstraints(args);
   }
 
   if (name === "void_cylinder") {
@@ -923,8 +1026,9 @@ void main() {
   for(int i=0;i<140;i++){
     p = ro + rd*t;
     float d = sdf(p);
-    if(abs(d) < 0.0009){ hit = true; break; }
-    t += clamp(abs(d), 0.004, 0.08);
+    float eps = max(0.0009, 0.00002 * length(ro));
+    if(abs(d) < eps){ hit = true; break; }
+    t += clamp(abs(d), 0.01, 3.2);
     if(t > 12.0) break;
   }
 

@@ -31,6 +31,7 @@ Topology-first implicit CAD kernel from scratch.
   - constraint-first ops:
     - `require_coverslip`, `require_center_hole`, `require_magnet_rings`, `require_ring_height`
     - `synthesize(c1, c2, ...)`
+    - bowlwell constraints: `require_upper_bore`, `require_lower_bore_outer_max`, `require_middle_bore`, `require_lower_to_middle`, `require_middle_to_upper`, `require_wall_min`, `synthesize_bowlwell(...)`
     - `void_cylinder`, `apply_voids`, `repeat_polar`
 - Morse analysis foundations:
   - Finite-difference Hessian
