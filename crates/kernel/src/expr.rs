@@ -84,3 +84,97 @@ pub fn tube(outer_r: f64, inner_r: f64, half_h: f64) -> Expr {
         Box::new(caps),
     )
 }
+
+fn sphere_shifted(r: f64, zc: f64) -> Expr {
+    let z = Expr::Z.sub(Expr::c(zc));
+    Expr::X
+        .mul(Expr::X)
+        .add(Expr::Y.mul(Expr::Y))
+        .add(z.clone().mul(z))
+        .sub(Expr::c(r * r))
+}
+
+fn cylinder_z(r: f64) -> Expr {
+    Expr::X
+        .mul(Expr::X)
+        .add(Expr::Y.mul(Expr::Y))
+        .sub(Expr::c(r * r))
+}
+
+fn z_slab(z0: f64, z1: f64) -> Expr {
+    Expr::Max(
+        Box::new(Expr::c(z0).sub(Expr::Z)),
+        Box::new(Expr::Z.sub(Expr::c(z1))),
+    )
+}
+
+fn union(a: Expr, b: Expr) -> Expr {
+    Expr::Min(Box::new(a), Box::new(b))
+}
+
+fn intersect(a: Expr, b: Expr) -> Expr {
+    Expr::Max(Box::new(a), Box::new(b))
+}
+
+fn subtract(a: Expr, b: Expr) -> Expr {
+    Expr::Max(Box::new(a), Box::new(b.neg()))
+}
+
+pub fn bowl_well_hallbach(scale: f64) -> Expr {
+    // Based on hallbach.lua BowlWell geometry, scaled for viewport stability.
+    let s = scale.max(1e-6);
+
+    let radius = 50.0 * s;
+    let wall = 1.5 * s;
+    let inner_radius = radius - wall;
+    let print_clearance = 0.25 * s;
+    let ring_center_hole_radius = 12.5 * s;
+    let ring_platform_height = 0.5 * s;
+    let tube_height = 25.0 * s;
+    let tube_overlap = 1.0 * s;
+    let thread_height = 6.0 * s;
+    let thread_diameter = 22.5 * s;
+    let thread_wall = 0.9 * s;
+    let tube_outer_radius = ring_center_hole_radius - print_clearance;
+    let tube_inner_radius = 10.0 * s;
+
+    let intersection_offset = (radius * radius - tube_outer_radius * tube_outer_radius).sqrt();
+    let cap_top = tube_height - ring_platform_height - tube_overlap + thread_height;
+    let z_center = cap_top + intersection_offset;
+
+    // Bowl shell and opening.
+    let shell = subtract(
+        sphere_shifted(radius, z_center),
+        sphere_shifted(inner_radius, z_center),
+    );
+    let open_half = Expr::Z.sub(Expr::c(z_center));
+    let bowl = intersect(shell, open_half);
+    let bowl_with_hole = subtract(bowl, cylinder_z(tube_outer_radius));
+
+    // Tube and thread collar.
+    let tube_z0 = -ring_platform_height + thread_height;
+    let tube_z1 = tube_z0 + tube_height;
+    let tube_wall = intersect(
+        subtract(cylinder_z(tube_outer_radius), cylinder_z(tube_inner_radius)),
+        z_slab(tube_z0, tube_z1),
+    );
+
+    let thread_outer = (thread_diameter * 0.5) + thread_wall;
+    let thread_inner = (thread_diameter * 0.5) - (1.1 * s);
+    let thread_collar = intersect(
+        subtract(cylinder_z(thread_outer), cylinder_z(thread_inner.max(1e-6))),
+        z_slab(-ring_platform_height, -ring_platform_height + thread_height),
+    );
+
+    let base = union(union(bowl_with_hole, tube_wall), thread_collar);
+
+    // O-ring groove subtraction.
+    let groove_z0 = -ring_platform_height + thread_height;
+    let groove_z1 = groove_z0 + (1.5 * s);
+    let groove = intersect(
+        subtract(cylinder_z(11.2 * s), cylinder_z(8.8 * s)),
+        z_slab(groove_z0, groove_z1),
+    );
+
+    subtract(base, groove)
+}

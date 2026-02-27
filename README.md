@@ -13,6 +13,7 @@ Topology-first implicit CAD kernel from scratch.
 ## Implemented in this bootstrap
 - Expression tree (`Expr`) with arithmetic, trig, booleans, smooth booleans, transforms
 - Tube primitive (`tube(outer_r, inner_r, half_h)`)
+- BowlWell primitive (`bowl_well_hallbach(scale)`) from `hallbach.lua`
 - Evaluators:
   - Point eval
   - Interval eval
@@ -30,6 +31,7 @@ Topology-first implicit CAD kernel from scratch.
   - legacy `eval`, `grad`, `critical`, `glsl` commands
 - Three.js viewer with Mittens-style panel workflow:
   - topology-driven rebuild
+  - scene switching (`tube`, `bowlwell`)
   - orbit camera
   - browser-side STL meshing/export (marching tetrahedra)
 

@@ -1,6 +1,6 @@
 use crate::ad::eval_ad;
 use crate::eval::{eval, Point};
-use crate::expr::{sphere, tube, Expr};
+use crate::expr::{bowl_well_hallbach, sphere, tube, Expr};
 use crate::glsl::to_glsl;
 use crate::interval::{eval_interval, Interval};
 use crate::morse::refine_critical;
@@ -75,4 +75,13 @@ fn topology_roundtrip_matches_eval() {
     let v1 = eval(&e, p);
     let v2 = eval(&e2, p);
     assert!((v1 - v2).abs() < 1e-10);
+}
+
+#[test]
+fn bowl_well_has_material_and_void_regions() {
+    let b = bowl_well_hallbach(0.02);
+    // Tube wall region should be solid.
+    assert!(eval(&b, Point { x: 0.23, y: 0.0, z: 0.3 }) < 0.0);
+    // Axis bore should be empty.
+    assert!(eval(&b, Point { x: 0.0, y: 0.0, z: 0.3 }) > 0.0);
 }

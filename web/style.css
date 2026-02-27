@@ -71,6 +71,16 @@ input[type="range"] {
   width: 100%;
 }
 
+select {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid #3f5169;
+  background: #0f1520;
+  color: #eaf3ff;
+}
+
 button {
   width: 100%;
   margin-top: 6px;

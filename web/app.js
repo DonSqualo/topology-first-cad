@@ -4,6 +4,8 @@ const ws = new WebSocket(`ws://${location.host}/ws`);
 
 const out = document.getElementById("out");
 const topoMeta = document.getElementById("topoMeta");
+const sceneSel = document.getElementById("scene");
+const scale = document.getElementById("scale");
 const outerR = document.getElementById("outerR");
 const innerR = document.getElementById("innerR");
 const halfH = document.getElementById("halfH");
@@ -13,6 +15,7 @@ const exportBtn = document.getElementById("exportStl");
 
 let topology = null;
 let glslCode = `float sdf(vec3 p){return length(p)-0.7;}`;
+let currentScene = "tube";
 
 const canvas = document.getElementById("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -43,12 +46,13 @@ function currentParams() {
     i = o - 0.01;
     innerR.value = String(i);
   }
-  return { outer_r: o, inner_r: i, half_h: h };
+  return { outer_r: o, inner_r: i, half_h: h, scale: Number(scale.value) };
 }
 
 function requestTopology() {
   const p = currentParams();
-  send({ cmd: "topology_scene", scene: "tube", ...p });
+  currentScene = sceneSel.value;
+  send({ cmd: "topology_scene", scene: currentScene, ...p });
 }
 
 ws.addEventListener("open", () => {
@@ -70,6 +74,15 @@ ws.addEventListener("message", (evt) => {
       2,
     );
     send({ cmd: "glsl_topology", topology });
+    if (currentScene === "bowlwell") {
+      cameraState.dist = 4.8;
+      cameraState.pitch = 0.38;
+      cameraState.yaw = 0.55;
+    } else {
+      cameraState.dist = 3.2;
+      cameraState.pitch = 0.25;
+      cameraState.yaw = 0.6;
+    }
     return;
   }
   if (m.ok === "glsl") {
@@ -87,17 +100,24 @@ ws.addEventListener("message", (evt) => {
 });
 
 rebuildBtn.addEventListener("click", requestTopology);
+sceneSel.addEventListener("change", requestTopology);
 criticalBtn.addEventListener("click", () => {
   if (!topology) return;
-  send({ cmd: "critical_topology", topology, x: 0.7, y: 0.0, z: 0.0 });
+  if (currentScene === "bowlwell") {
+    send({ cmd: "critical_topology", topology, x: 0.0, y: 0.0, z: 1.0 });
+  } else {
+    send({ cmd: "critical_topology", topology, x: 0.7, y: 0.0, z: 0.0 });
+  }
 });
 exportBtn.addEventListener("click", () => {
   if (!topology) return;
-  const stl = meshToAsciiStl(topology, 38);
+  const bounds = currentScene === "bowlwell" ? [-2.8, 2.8] : [-1.7, 1.7];
+  const res = currentScene === "bowlwell" ? 44 : 38;
+  const stl = meshToAsciiStl(topology, res, bounds[0], bounds[1]);
   const blob = new Blob([stl], { type: "model/stl" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "tube-topology.stl";
+  a.download = `${currentScene}-topology.stl`;
   a.click();
   URL.revokeObjectURL(a.href);
   log("browser meshing complete: STL exported");
@@ -269,9 +289,7 @@ function triNormal(a, b, c) {
   return [nx / l, ny / l, nz / l];
 }
 
-function meshToAsciiStl(program, res = 34) {
-  const min = -1.7;
-  const max = 1.7;
+function meshToAsciiStl(program, res = 34, min = -1.7, max = 1.7) {
   const step = (max - min) / (res - 1);
 
   const tetra = [

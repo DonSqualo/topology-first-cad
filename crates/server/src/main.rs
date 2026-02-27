@@ -11,7 +11,7 @@ use futures::StreamExt;
 use morse_kernel::{
     ad::eval_ad,
     eval::{eval, Point},
-    expr::{sphere, tube, Expr},
+    expr::{bowl_well_hallbach, sphere, tube, Expr},
     glsl::to_glsl,
     morse::refine_critical,
     topology::{expr_to_topology, topology_to_expr, TopologyProgram, TopologySignature},
@@ -35,6 +35,7 @@ enum Request {
         outer_r: Option<f64>,
         inner_r: Option<f64>,
         half_h: Option<f64>,
+        scale: Option<f64>,
     },
     #[serde(rename = "glsl_topology")]
     GlslTopology { topology: TopologyProgram },
@@ -157,6 +158,7 @@ fn route_request(req: Request) -> Response {
             outer_r,
             inner_r,
             half_h,
+            scale,
         } => {
             let topo = match scene.as_str() {
                 "tube" => {
@@ -168,6 +170,16 @@ fn route_request(req: Request) -> Response {
                         betti_hint: [1, 1, 0],
                         euler_hint: 0,
                         genus_hint: 1,
+                    };
+                    t
+                }
+                "bowlwell" => {
+                    let s = scale.unwrap_or(0.02).clamp(0.005, 0.08);
+                    let mut t = expr_to_topology(&bowl_well_hallbach(s));
+                    t.signature = TopologySignature {
+                        betti_hint: [1, 1, 0],
+                        euler_hint: 0,
+                        genus_hint: 0,
                     };
                     t
                 }
