@@ -71,3 +71,16 @@ pub fn torus(major_r: f64, minor_r: f64) -> Expr {
         .mul(t)
         .sub(Expr::c(4.0 * major_r * major_r).mul(Expr::X.mul(Expr::X).add(Expr::Y.mul(Expr::Y))))
 }
+
+pub fn tube(outer_r: f64, inner_r: f64, half_h: f64) -> Expr {
+    // Solid tube volume: inner_r <= sqrt(x^2+y^2) <= outer_r and |z| <= half_h.
+    let r2 = Expr::X.mul(Expr::X).add(Expr::Y.mul(Expr::Y));
+    let z2 = Expr::Z.mul(Expr::Z);
+    let outer = r2.clone().sub(Expr::c(outer_r * outer_r));
+    let inner = Expr::c(inner_r * inner_r).sub(r2);
+    let caps = z2.sub(Expr::c(half_h * half_h));
+    Expr::Max(
+        Box::new(Expr::Max(Box::new(outer), Box::new(inner))),
+        Box::new(caps),
+    )
+}

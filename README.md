@@ -12,18 +12,26 @@ Topology-first implicit CAD kernel from scratch.
 
 ## Implemented in this bootstrap
 - Expression tree (`Expr`) with arithmetic, trig, booleans, smooth booleans, transforms
+- Tube primitive (`tube(outer_r, inner_r, half_h)`)
 - Evaluators:
   - Point eval
   - Interval eval
   - First-order autodiff (value + gradient)
   - GLSL codegen
+- Topology transport:
+  - `morse.topo.v1` graph format (nodes + root + invariants + topological signature)
+  - `expr_to_topology` and `topology_to_expr`
 - Morse analysis foundations:
   - Finite-difference Hessian
   - Newton critical point refinement
   - Morse index classification (Jacobi eigenvalue solver)
 - WebSocket server with:
-  - `eval`, `grad`, `critical`, `glsl` commands
-- Three.js viewer with basic raymarch shader compiled from generated GLSL snippet
+  - `topology_scene`, `glsl_topology`, `critical_topology`
+  - legacy `eval`, `grad`, `critical`, `glsl` commands
+- Three.js viewer with Mittens-style panel workflow:
+  - topology-driven rebuild
+  - orbit camera
+  - browser-side STL meshing/export (marching tetrahedra)
 
 ## Run
 ```bash

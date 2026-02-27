@@ -3,19 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Topology-First CAD</title>
+    <title>Morse Topology CAD</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main>
-      <div class="hud">
-        <h1>Topology-First CAD</h1>
-        <p>Implicit field renderer from Rust-generated GLSL.</p>
-        <button id="critical">Find Critical @ Origin Seed</button>
-        <pre id="out"></pre>
-      </div>
-      <canvas id="view"></canvas>
+    <main class="layout">
+      <aside class="panel">
+        <h1>Morse Topology CAD</h1>
+        <p class="muted">Topology graph over websocket. Mesh only as browser export.</p>
+
+        <section class="card">
+          <h2>Tube</h2>
+          <label>Outer Radius <input id="outerR" type="range" min="0.6" max="2.0" step="0.01" value="1.1" /></label>
+          <label>Inner Radius <input id="innerR" type="range" min="0.2" max="1.8" step="0.01" value="0.65" /></label>
+          <label>Half Height <input id="halfH" type="range" min="0.3" max="2.0" step="0.01" value="1.1" /></label>
+          <button id="rebuild">Rebuild Topology</button>
+        </section>
+
+        <section class="card actions">
+          <button id="critical">Find Critical (seed 0.7,0,0)</button>
+          <button id="exportStl">Export STL (Browser Mesh)</button>
+        </section>
+
+        <section class="card">
+          <h2>Topology</h2>
+          <pre id="topoMeta"></pre>
+        </section>
+
+        <section class="card">
+          <h2>Log</h2>
+          <pre id="out"></pre>
+        </section>
+      </aside>
+
+      <section class="viewportWrap">
+        <canvas id="view"></canvas>
+      </section>
     </main>
+
     <script type="module" src="/app.js"></script>
   </body>
 </html>
