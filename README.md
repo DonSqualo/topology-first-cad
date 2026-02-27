@@ -29,6 +29,7 @@ Topology-first implicit CAD kernel from scratch.
   - chain methods: `:at(x,y,z)`, `:rotz(a)`
   - shape ops: `sphere`, `cylinder`, `box`, `torus`, `tube`, `union`, `intersect`, `subtract`
   - constraint-first ops:
+    - generic: `require("key", value)`, `objective("name", weight)`, `synthesize("model", c1, c2, ...)`
     - `require_coverslip`, `require_center_hole`, `require_magnet_rings`, `require_ring_height`
     - `synthesize(c1, c2, ...)`
     - bowlwell constraints: `require_upper_bore`, `require_lower_bore_outer_max`, `require_middle_bore`, `require_lower_to_middle`, `require_middle_to_upper`, `require_wall_min`, `synthesize_bowlwell(...)`

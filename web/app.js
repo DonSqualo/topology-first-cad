@@ -32,7 +32,7 @@ result = tube(outer_r, inner_r, half_h)
     criticalSeed: [0.0, 0.0, 35.0],
     exportMesh: { min: -40, max: 90, res: 52 },
     camera: { dist: 150, pitch: 0.34, yaw: 0.52 },
-    script: `-- Constraint-first BowlWell in mm
+    script: `-- Generic constraint DSL (model-agnostic)
 -- Targets:
 -- upper bore = 50mm
 -- lower bore outer max = 24.5mm
@@ -40,16 +40,16 @@ result = tube(outer_r, inner_r, half_h)
 -- middle to upper = 40mm
 -- continuous wall, maximize internal volume under wall_min
 
-b1 = require_upper_bore(50)
-b2 = require_lower_bore_outer_max(24.5)
-b3 = require_middle_bore(24.5)
-b4 = require_lower_to_middle(30)
-b5 = require_middle_to_upper(40)
-b6 = require_wall_min(1.5)
-o1 = objective_maximize_internal_volume(1.0)
-o2 = objective_minimize_height(0.35)
-
-result = synthesize_bowlwell(b1, b2, b3, b4, b5, b6, o1, o2)
+result = synthesize("bowlwell",
+  require("upper_bore", 50),
+  require("lower_bore_outer_max", 24.5),
+  require("middle_bore", 24.5),
+  require("lower_to_middle", 30),
+  require("middle_to_upper", 40),
+  require("wall_min", 1.5),
+  objective("maximize_internal_volume", 1.0),
+  objective("minimize_height", 0.35)
+)
 `,
   },
   deepwell: {
@@ -70,13 +70,16 @@ result = union(body, top_lip)
     criticalSeed: [1.0, 0.0, 0.0],
     exportMesh: { min: -2.3, max: 2.3, res: 42 },
     camera: { dist: 4.0, pitch: 0.32, yaw: 0.58 },
-    script: `-- Constraint-first Halbach ring (no direct geometry authoring)
-c1 = require_coverslip(20)
-c2 = require_center_hole(25)
-c3 = require_magnet_rings(8, 12, 12.8, 0.35)
-c4 = require_ring_height(1.15)
-
-base = synthesize(c1, c2, c3, c4)
+    script: `-- Generic constraint DSL (same language as bowlwell)
+base = synthesize("ring",
+  require("coverslip", 20),
+  require("center_hole", 25),
+  require("inner_count", 8),
+  require("outer_count", 12),
+  require("magnet_size", 12.8),
+  require("min_gap", 0.35),
+  require("ring_height", 1.15)
+)
 
 -- Negative-space constraints: these regions must remain empty
 v1 = void_cylinder(0.0, 0.0, 0.0, 0.24, 1.6)
@@ -449,6 +452,79 @@ function ensureConstraint(v, context) {
   if (!isConstraint(v)) throw new Error(`${context} expects a constraint`);
 }
 
+function ensureText(v, context) {
+  if (typeof v !== "string") throw new Error(`${context} expects a string`);
+}
+
+function toConstraintSet(model, constraints) {
+  const modelName = String(model).toLowerCase();
+  if (modelName === "bowlwell") {
+    return constraints.map((c) => {
+      ensureConstraint(c, "synthesize");
+      if (c.kind === "generic") {
+        const k = String(c.data.key).toLowerCase();
+        const v = c.data.value;
+        if (k === "upper_bore") return makeConstraint("upper_bore", { diameter: v });
+        if (k === "lower_bore_outer_max") return makeConstraint("lower_bore_outer_max", { diameter: v });
+        if (k === "middle_bore") return makeConstraint("middle_bore", { diameter: v });
+        if (k === "lower_to_middle") return makeConstraint("lower_to_middle", { distance: v });
+        if (k === "middle_to_upper") return makeConstraint("middle_to_upper", { distance: v });
+        if (k === "wall_min") return makeConstraint("wall_min", { thickness: v });
+      }
+      if (c.kind === "objective_generic") {
+        const k = String(c.data.key).toLowerCase();
+        if (k === "maximize_internal_volume") {
+          return makeConstraint("objective_maximize_internal_volume", { weight: c.data.weight });
+        }
+        if (k === "minimize_height") {
+          return makeConstraint("objective_minimize_height", { weight: c.data.weight });
+        }
+      }
+      return c;
+    });
+  }
+  if (modelName === "ring" || modelName === "halbach") {
+    const merged = {
+      coverslip: 20,
+      center_hole: 25,
+      inner_count: 8,
+      outer_count: 12,
+      magnet_size: 12.8,
+      min_gap: 0.35,
+      ring_height: 1.15,
+    };
+    constraints.forEach((c) => {
+      ensureConstraint(c, "synthesize");
+      if (c.kind === "generic") {
+        const k = String(c.data.key).toLowerCase();
+        merged[k] = c.data.value;
+      } else {
+        if (c.kind === "coverslip") merged.coverslip = c.data.diameter;
+        if (c.kind === "center_hole") merged.center_hole = c.data.diameter;
+        if (c.kind === "ring_height") merged.ring_height = c.data.half_h;
+        if (c.kind === "magnet_rings") {
+          merged.inner_count = c.data.inner_count;
+          merged.outer_count = c.data.outer_count;
+          merged.magnet_size = c.data.magnet_size;
+          merged.min_gap = c.data.min_gap;
+        }
+      }
+    });
+    return [
+      makeConstraint("coverslip", { diameter: merged.coverslip }),
+      makeConstraint("center_hole", { diameter: merged.center_hole }),
+      makeConstraint("magnet_rings", {
+        inner_count: merged.inner_count,
+        outer_count: merged.outer_count,
+        magnet_size: merged.magnet_size,
+        min_gap: merged.min_gap,
+      }),
+      makeConstraint("ring_height", { half_h: merged.ring_height }),
+    ];
+  }
+  throw new Error(`unknown synthesis model: ${model}`);
+}
+
 function foldShape(fn, args, context) {
   if (args.length < 2) throw new Error(`${context} expects at least 2 shape args`);
   args.forEach((a) => ensureShape(a, context));
@@ -523,6 +599,20 @@ function builtins(name, args) {
     }
     args.forEach((a) => ensureNum(a, "halbach_from_constraints"));
     return halbachFromConstraints(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+  }
+
+  if (name === "require") {
+    if (args.length !== 2) throw new Error("require(key, value) expects 2 args");
+    ensureText(args[0], "require");
+    ensureNum(args[1], "require");
+    return makeConstraint("generic", { key: args[0], value: args[1] });
+  }
+
+  if (name === "objective") {
+    if (args.length !== 2) throw new Error("objective(name, weight) expects 2 args");
+    ensureText(args[0], "objective");
+    ensureNum(args[1], "objective");
+    return makeConstraint("objective_generic", { key: args[0], weight: Math.max(0.0, args[1]) });
   }
 
   if (name === "require_coverslip") {
@@ -610,6 +700,12 @@ function builtins(name, args) {
 
   if (name === "synthesize") {
     if (args.length < 1) throw new Error("synthesize(c1, c2, ...) expects at least 1 constraint");
+    if (typeof args[0] === "string") {
+      const model = args[0];
+      const set = toConstraintSet(model, args.slice(1));
+      if (String(model).toLowerCase() === "bowlwell") return synthesizeBowlwellFromConstraints(set);
+      return synthesizeFromConstraints(set);
+    }
     args.forEach((a) => ensureConstraint(a, "synthesize"));
     return synthesizeFromConstraints(args);
   }
@@ -745,6 +841,19 @@ function tokenize(expr) {
       i = j;
       continue;
     }
+    if (c === "\"" || c === "'") {
+      const q = c;
+      let j = i + 1;
+      let s = "";
+      while (j < expr.length && expr[j] !== q) {
+        s += expr[j];
+        j += 1;
+      }
+      if (j >= expr.length) throw new Error("unterminated string literal");
+      tokens.push({ type: "str", value: s });
+      i = j + 1;
+      continue;
+    }
     if (/[A-Za-z_]/.test(c)) {
       let j = i + 1;
       while (j < expr.length && /[A-Za-z0-9_]/.test(expr[j])) j += 1;
@@ -794,6 +903,9 @@ function parseExpr(expr) {
     } else if (n.type === "num") {
       i += 1;
       base = { type: "num", value: n.value };
+    } else if (n.type === "str") {
+      i += 1;
+      base = { type: "str", value: n.value };
     } else if (n.type === "id") {
       i += 1;
       const id = n.value;
@@ -873,6 +985,7 @@ function parseExpr(expr) {
 
 function evalAst(ast, env) {
   if (ast.type === "num") return ast.value;
+  if (ast.type === "str") return ast.value;
   if (ast.type === "var") {
     if (!(ast.name in env)) throw new Error(`unknown variable: ${ast.name}`);
     return env[ast.name];
